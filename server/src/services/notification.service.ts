@@ -1,4 +1,5 @@
 import { NotificationModel, type NotificationDocument } from "../models/Notification.model.js";
+import { Types } from "mongoose";
 import { UserModel } from "../models/User.model.js";
 import { type NotificationType } from "../models/types.js";
 import {
@@ -25,6 +26,14 @@ function getDocumentId(value: unknown) {
   }
 
   if (typeof value === "object") {
+    if (value instanceof Types.ObjectId) {
+      return value.toString();
+    }
+
+    if (value.constructor?.name === "ObjectId" && "toString" in value) {
+      return value.toString();
+    }
+
     const maybeId = (value as { _id?: unknown })._id;
     if (maybeId) {
       return getDocumentId(maybeId);

@@ -503,9 +503,10 @@ export function DoctorsPage({
                       <p className="text-xs text-slate-500">{doctor.bio ? doctor.bio.slice(0, 74) : "Live profile available from the backend."}</p>
                       <Link
                         href={buildDoctorDetailHref(doctorId, state)}
-                        className="inline-flex shrink-0 items-center gap-2 rounded-full bg-[#020617] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#020617]"
+                        className="inline-flex shrink-0 items-center gap-2 rounded-full bg-[#020617] px-4 py-2.5 text-sm font-semibold !text-white hover:bg-[#020617] hover:!text-white"
+                        style={{ color: "#ffffff" }}
                       >
-                        View details <ArrowRight className="size-4" />
+                        View details <ArrowRight className="size-4 text-white" />
                       </Link>
                     </div>
                   </CardContent>

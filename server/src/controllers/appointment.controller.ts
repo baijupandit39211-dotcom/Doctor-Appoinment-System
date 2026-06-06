@@ -1,5 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 
+import { Types } from "mongoose";
+
 import { AppointmentModel } from "../models/Appointment.model.js";
 import { DoctorModel } from "../models/Doctor.model.js";
 import { PatientModel } from "../models/Patient.model.js";
@@ -51,6 +53,37 @@ function resolveUserId(user: unknown) {
 
   if (typeof user === "object" && "_id" in user && user._id) {
     return user._id.toString();
+  }
+
+  return "";
+}
+
+function resolveDocumentId(value: unknown) {
+  if (!value) {
+    return "";
+  }
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (typeof value === "object" && value) {
+    if (value instanceof Types.ObjectId) {
+      return value.toString();
+    }
+
+    if (value.constructor?.name === "ObjectId" && "toString" in value) {
+      return value.toString();
+    }
+
+    if ("_id" in value && (value as { _id?: unknown })._id) {
+      return resolveDocumentId((value as { _id?: unknown })._id);
+    }
+
+    if ("toString" in value) {
+      const stringValue = value.toString();
+      return stringValue === "[object Object]" ? "" : stringValue;
+    }
   }
 
   return "";
@@ -431,12 +464,14 @@ export async function getAppointmentById(req: Request, res: Response, next: Next
 
     if (req.user.role === "doctor") {
       const doctor = await getDoctorProfile(req.user._id.toString());
-      if (appointment.doctorId && appointment.doctorId.toString() !== doctor._id.toString()) {
+      const appointmentDoctorId = resolveDocumentId(appointment.doctorId);
+      if (appointmentDoctorId && appointmentDoctorId !== doctor._id.toString()) {
         throw new AppError("Forbidden", 403);
       }
     } else {
       const patientId = await getPatientProfileId(req.user._id.toString());
-      if (appointment.patientId && appointment.patientId.toString() !== patientId) {
+      const appointmentPatientId = resolveDocumentId(appointment.patientId);
+      if (appointmentPatientId && appointmentPatientId !== patientId) {
         throw new AppError("Forbidden", 403);
       }
     }
@@ -465,7 +500,8 @@ export async function updateAppointmentStatus(req: Request, res: Response, next:
 
     if (req.user.role === "doctor") {
       const doctor = await getDoctorProfile(req.user._id.toString());
-      if (appointment.doctorId && appointment.doctorId.toString() !== doctor._id.toString()) {
+      const appointmentDoctorId = resolveDocumentId(appointment.doctorId);
+      if (appointmentDoctorId && appointmentDoctorId !== doctor._id.toString()) {
         throw new AppError("Forbidden", 403);
       }
     } else if (!isAdminRole(req.user.role)) {
@@ -521,13 +557,15 @@ export async function cancelAppointment(req: Request, res: Response, next: NextF
 
     if (req.user.role === "patient") {
       const patientId = await getPatientProfileId(req.user._id.toString());
-      if (appointment.patientId && appointment.patientId.toString() !== patientId) {
+      const appointmentPatientId = resolveDocumentId(appointment.patientId);
+      if (appointmentPatientId && appointmentPatientId !== patientId) {
         throw new AppError("Patients can only cancel their own appointments", 403);
       }
       cancelledBy = "patient";
     } else if (req.user.role === "doctor") {
       const doctor = await getDoctorProfile(req.user._id.toString());
-      if (appointment.doctorId && appointment.doctorId.toString() !== doctor._id.toString()) {
+      const appointmentDoctorId = resolveDocumentId(appointment.doctorId);
+      if (appointmentDoctorId && appointmentDoctorId !== doctor._id.toString()) {
         throw new AppError("Doctors can only cancel their own appointments", 403);
       }
       cancelledBy = "doctor";
