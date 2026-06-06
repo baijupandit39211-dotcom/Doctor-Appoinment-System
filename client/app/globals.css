@@ -1,0 +1,159 @@
+@import "tailwindcss";
+
+:root {
+  --radius: 1rem;
+  --background: #ffffff;
+  --foreground: #122033;
+  --card: #ffffff;
+  --card-foreground: #122033;
+  --popover: #ffffff;
+  --popover-foreground: #122033;
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --secondary: #f5f7fb;
+  --secondary-foreground: #122033;
+  --muted: #f5f7fb;
+  --muted-foreground: #5b6475;
+  --accent: #e8f1ff;
+  --accent-foreground: #122033;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #e5e7eb;
+  --input: #e5e7eb;
+  --ring: #2563eb;
+  --teal: #14b8a6;
+  --sky: #0ea5e9;
+  --shadow-soft: 0 4px 20px -4px rgba(37, 99, 235, 0.08);
+  --shadow-glow: 0 20px 60px -20px rgba(37, 99, 235, 0.35);
+  --shadow-card: 0 10px 40px -10px rgba(18, 32, 51, 0.12);
+  --gradient-hero: linear-gradient(135deg, #2563eb 0%, #0ea5e9 50%, #14b8a6 100%);
+  --gradient-mesh: radial-gradient(at 20% 10%, rgba(37, 99, 235, 0.14) 0, transparent 50%),
+    radial-gradient(at 80% 0%, rgba(14, 165, 233, 0.14) 0, transparent 50%),
+    radial-gradient(at 40% 90%, rgba(20, 184, 166, 0.12) 0, transparent 50%);
+}
+
+:root {
+  --radius: 1rem;
+  --background: #ffffff;
+  --foreground: #1e293b;
+  --card: #ffffff;
+  --card-foreground: #1e293b;
+  --popover: #ffffff;
+  --popover-foreground: #1e293b;
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --secondary: #f8fafc;
+  --secondary-foreground: #1e293b;
+  --muted: #f8fafc;
+  --muted-foreground: #64748b;
+  --accent: #e2e8f0;
+  --accent-foreground: #1e293b;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #2563eb;
+  --teal: #14b8a6;
+  --sky: #0ea5e9;
+  --green: #22c55e;
+  --amber: #f59e0b;
+  --shadow-soft: 0 4px 20px -4px rgba(37, 99, 235, 0.08);
+  --shadow-glow: 0 20px 60px -20px rgba(37, 99, 235, 0.35);
+  --shadow-card: 0 10px 40px -10px rgba(30, 41, 59, 0.12);
+  --gradient-hero: linear-gradient(135deg, #2563eb 0%, #0ea5e9 50%, #14b8a6 100%);
+  --gradient-mesh: radial-gradient(at 20% 10%, rgba(37, 99, 235, 0.14) 0, transparent 50%),
+    radial-gradient(at 80% 0%, rgba(14, 165, 233, 0.14) 0, transparent 50%),
+    radial-gradient(at 40% 90%, rgba(20, 184, 166, 0.12) 0, transparent 50%);
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: 24px;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-teal: var(--teal);
+  --color-sky: var(--sky);
+  --color-green: var(--green);
+  --color-amber: var(--amber);
+  --font-display: "Inter", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Inter, system-ui, sans-serif;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.glass {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(16px);
+}
+
+.glass-strong {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(20px);
+}
+
+.shadow-soft {
+  box-shadow: var(--shadow-soft);
+}
+
+.shadow-glow {
+  box-shadow: var(--shadow-glow);
+}
+
+.shadow-card {
+  box-shadow: var(--shadow-card);
+}
+
+.bg-hero-gradient {
+  background: var(--gradient-hero);
+}
+
+.bg-mesh {
+  background: var(--gradient-mesh), linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+}

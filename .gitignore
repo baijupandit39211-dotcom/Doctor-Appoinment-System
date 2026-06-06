@@ -1,0 +1,17 @@
+node_modules/
+client/node_modules/
+server/node_modules/
+
+.next/
+client/.next/
+**/.next/
+
+dist/
+build/
+test-results/
+
+.env
+.env.local
+server/.env
+client/.env
+client/.env.local
