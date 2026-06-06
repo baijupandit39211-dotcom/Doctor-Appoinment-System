@@ -44,3 +44,17 @@ export async function getCurrentUser() {
     method: "GET",
   });
 }
+
+export async function sendPasswordResetLink(input: { email: string }) {
+  return requestJson<null>("/api/auth/forgot-password", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function resetPassword(input: { token: string; password: string }) {
+  return requestJson<null>("/api/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}

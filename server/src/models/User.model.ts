@@ -9,6 +9,8 @@ export interface User {
   role: (typeof userRoles)[number];
   avatar?: string;
   isActive: boolean;
+  passwordResetToken?: string | null;
+  passwordResetExpires?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -26,6 +28,8 @@ const UserSchema = new Schema<User>(
     },
     avatar: { type: String },
     isActive: { type: Boolean, default: true },
+    passwordResetToken: { type: String, select: false, default: null },
+    passwordResetExpires: { type: Date, select: false, default: null },
   },
   { timestamps: true },
 );

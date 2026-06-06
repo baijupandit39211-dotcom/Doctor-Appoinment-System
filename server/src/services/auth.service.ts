@@ -1,4 +1,5 @@
 import * as bcrypt from "bcryptjs";
+import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
 
 import { env } from "../config/env.js";
@@ -167,6 +168,56 @@ export async function loginUser(input: { email: string; password: string }) {
     user: toPublicUser(user as UserLike),
     token,
     cookieOptions: authCookieOptions(),
+  };
+}
+
+export async function createPasswordResetToken(email: string) {
+  const normalizedEmail = email.trim().toLowerCase();
+  const user = await UserModel.findOne({ email: normalizedEmail });
+
+  if (!user) {
+    return {
+      created: false,
+      resetLink: undefined,
+    };
+  }
+
+  const resetToken = crypto.randomBytes(32).toString("hex");
+  const hashedToken = crypto.createHash("sha256").update(resetToken).digest("hex");
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+  user.passwordResetToken = hashedToken;
+  user.passwordResetExpires = expiresAt;
+  await user.save();
+
+  const resetLink = `${env.CLIENT_URL}/reset-password?token=${resetToken}`;
+  console.log(`[DocPulse] Password reset link for ${user.email}: ${resetLink}`);
+
+  return {
+    created: true,
+    resetLink,
+  };
+}
+
+export async function resetPassword(input: { token: string; password: string }) {
+  const hashedToken = crypto.createHash("sha256").update(input.token).digest("hex");
+
+  const user = await UserModel.findOne({
+    passwordResetToken: hashedToken,
+    passwordResetExpires: { $gt: new Date() },
+  });
+
+  if (!user) {
+    throw new AppError("Invalid or expired reset token", 400);
+  }
+
+  user.password = await bcrypt.hash(input.password, 12);
+  user.passwordResetToken = null;
+  user.passwordResetExpires = null;
+  await user.save();
+
+  return {
+    message: "Password reset successful",
   };
 }
 
