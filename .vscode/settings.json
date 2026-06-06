@@ -1,0 +1,17 @@
+{
+  "files.exclude": {
+    "**/_archive_old_tanstack": true,
+    "**/.lovable": true,
+    "**/supabase": true
+  },
+  "search.exclude": {
+    "**/_archive_old_tanstack": true,
+    "**/.lovable": true,
+    "**/supabase": true
+  },
+  "files.watcherExclude": {
+    "**/_archive_old_tanstack/**": true,
+    "**/.lovable/**": true,
+    "**/supabase/**": true
+  }
+}
