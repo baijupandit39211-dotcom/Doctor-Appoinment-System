@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
@@ -88,6 +88,7 @@ type DoctorRecord = {
   isPublic?: boolean;
   consultationFee?: number;
   experienceYears?: number;
+  bio?: string;
   isAvailable?: boolean;
   clinicId?:
     | {
@@ -104,6 +105,7 @@ type DoctorRecord = {
     | string;
   departmentId?:
     | {
+      _id?: string;
       name?: string;
     }
     | string;
@@ -140,6 +142,20 @@ type AvailabilityRecord = {
   endTime?: string;
   slotDurationMinutes?: number;
   isActive?: boolean;
+};
+
+type DoctorCreationStatus = "pending" | "active";
+
+type DoctorCreationFormState = {
+  name: string;
+  email: string;
+  password: string;
+  departmentId: string;
+  specialization: string;
+  experienceYears: string;
+  consultationFee: string;
+  bio: string;
+  status: DoctorCreationStatus;
 };
 
 type OverviewRecord = {
@@ -242,14 +258,14 @@ function formatDoctorFee(doctor?: DoctorRecord) {
 
 function resolveDoctorDepartmentName(doctor?: DoctorRecord) {
   if (!doctor) {
-    return "Department unavailable";
+    return "Not assigned";
   }
 
   if (typeof doctor.departmentId === "string") {
-    return "Department unavailable";
+    return "Not assigned";
   }
 
-  return doctor.departmentId?.name ?? "Department unavailable";
+  return doctor.departmentId?.name ?? "Not assigned";
 }
 
 function matchesDoctorSearch(doctor: DoctorRecord, searchQuery: string) {
@@ -335,7 +351,7 @@ function doctorStatusMeta(status?: string, isPublic?: boolean) {
       };
     case "approved":
       return {
-        label: isPublic ? "Approved" : "Approved Â· Hidden",
+        label: isPublic ? "Approved" : "Approved · Hidden",
         className: isPublic ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-100 text-slate-600 border-slate-200",
       };
     case "rejected":
@@ -433,7 +449,7 @@ function buildRecentActivitySummary({
       ? `${pendingDoctors} doctor profile${pendingDoctors === 1 ? "" : "s"} are waiting for approval.`
       : "No doctor profiles are waiting for approval right now.",
     latestAppointment
-      ? `Latest appointment: ${formatAppointmentDate(latestAppointment.appointmentDate)} · ${appointmentStatusMeta(latestAppointment.status).label}.`
+      ? `Latest appointment: ${formatAppointmentDate(latestAppointment.appointmentDate)} Â· ${appointmentStatusMeta(latestAppointment.status).label}.`
       : "No recent appointment activity has been recorded yet.",
     departments.length > 0
       ? `${departments.length} department${departments.length === 1 ? "" : "s"} are available across the platform.`
@@ -945,11 +961,26 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
   const [isSavingAvailability, setIsSavingAvailability] = useState(false);
   const [isDeletingAvailabilityId, setIsDeletingAvailabilityId] = useState<string | null>(null);
   const [isSavingDepartment, setIsSavingDepartment] = useState(false);
+  const [isSavingDoctor, setIsSavingDoctor] = useState(false);
   const [isDeletingDepartmentId, setIsDeletingDepartmentId] = useState<string | null>(null);
   const [editingDepartmentId, setEditingDepartmentId] = useState<string | null>(null);
   const [editingAvailabilityId, setEditingAvailabilityId] = useState<string | null>(null);
+  const [editingDoctorId, setEditingDoctorId] = useState<string | null>(null);
+  const [isDoctorFormOpen, setIsDoctorFormOpen] = useState(false);
   const [availabilityMessage, setAvailabilityMessage] = useState("");
+  const [doctorCreationMessage, setDoctorCreationMessage] = useState("");
   const [departmentForm, setDepartmentForm] = useState({ name: "", description: "" });
+  const [doctorCreationForm, setDoctorCreationForm] = useState<DoctorCreationFormState>({
+    name: "",
+    email: "",
+    password: "",
+    departmentId: "",
+    specialization: "General Practice",
+    experienceYears: "0",
+    consultationFee: "0",
+    bio: "",
+    status: "pending",
+  });
   const [availabilityForm, setAvailabilityForm] = useState({
     doctorId: "",
     dayOfWeek: "monday",
@@ -970,6 +1001,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
   const [doctorsError, setDoctorsError] = useState("");
   const [availabilityError, setAvailabilityError] = useState("");
   const [departmentsError, setDepartmentsError] = useState("");
+  const [doctorCreationError, setDoctorCreationError] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -1030,8 +1062,16 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
   }, [config.expectedRole, router]);
 
   useEffect(() => {
-    setActiveSection(config.navItems[0]?.label ?? "Overview");
-  }, [config.expectedRole]);
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const searchParams = new URLSearchParams(window.location.search);
+    const sectionParam = searchParams.get("section") ?? "";
+    const defaultSection = config.navItems[0]?.label ?? "Overview";
+    const initialSection = config.navItems.some((item) => item.label === sectionParam) ? sectionParam : defaultSection;
+    setActiveSection(initialSection);
+  }, [config.expectedRole, config.navItems]);
 
   useEffect(() => {
     if (user?.role === "doctor" && content?.doctorProfileId) {
@@ -1188,6 +1228,98 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
   async function refreshDashboardContent(currentUser: AuthUser) {
     const nextContent = await loadDashboardContent(currentUser.role);
     setContent(nextContent);
+  }
+
+  function resetDoctorForm() {
+    setDoctorCreationForm({
+      name: "",
+      email: "",
+      password: "",
+      departmentId: "",
+      specialization: "General Practice",
+      experienceYears: "0",
+      consultationFee: "0",
+      bio: "",
+      status: "pending",
+    });
+    setEditingDoctorId(null);
+  }
+
+  function openDoctorCreateForm() {
+    if (!user) {
+      return;
+    }
+
+    const basePath = user.role === "super_admin" ? "/superadmin" : "/admin";
+    router.push(`${basePath}/doctors/new`);
+  }
+
+  function openDoctorEditForm(doctor: DoctorRecord) {
+    if (!user || !doctor._id) {
+      return;
+    }
+
+    const basePath = user.role === "super_admin" ? "/superadmin" : "/admin";
+    router.push(`${basePath}/doctors/${doctor._id}/edit`);
+  }
+
+  function closeDoctorForm() {
+    setIsDoctorFormOpen(false);
+    resetDoctorForm();
+  }
+
+  async function handleDoctorCreateSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!user) {
+      return;
+    }
+
+    setDoctorCreationMessage("");
+    setDoctorCreationError("");
+    setIsSavingDoctor(true);
+
+    try {
+      if (!editingDoctorId && !doctorCreationForm.password.trim()) {
+        throw new Error("Temporary password is required");
+      }
+
+      const payload = {
+        name: doctorCreationForm.name.trim(),
+        email: doctorCreationForm.email.trim(),
+        ...(doctorCreationForm.password.trim() ? { password: doctorCreationForm.password.trim() } : {}),
+        departmentId: doctorCreationForm.departmentId || undefined,
+        specialization: doctorCreationForm.specialization.trim() || "General Practice",
+        experienceYears: Number(doctorCreationForm.experienceYears || 0),
+        consultationFee: Number(doctorCreationForm.consultationFee || 0),
+        bio: doctorCreationForm.bio.trim(),
+        status: doctorCreationForm.status,
+      };
+
+      if (editingDoctorId) {
+        await requestJson(`/api/doctors/${editingDoctorId}`, {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        });
+        setDoctorCreationMessage("Doctor account updated successfully.");
+      } else {
+        await requestJson("/api/doctors", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        setDoctorCreationMessage("Doctor account created successfully.");
+      }
+
+      closeDoctorForm();
+
+      await refreshDashboardContent(user);
+    } catch (doctorCreateError) {
+      setDoctorCreationError(
+        doctorCreateError instanceof Error ? doctorCreateError.message : "Failed to create doctor account",
+      );
+    } finally {
+      setIsSavingDoctor(false);
+    }
   }
 
   async function handleDoctorApprovalAction(doctorId?: string, action?: "approve" | "reject" | "unpublish") {
@@ -2307,7 +2439,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
               <div className="mt-6">
                 {content.doctorsError || content.departmentsError || content.appointmentsError ? (
                   <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                    {[content.doctorsError, content.departmentsError, content.appointmentsError].filter(Boolean).join(" â€¢ ")}
+                    {[content.doctorsError, content.departmentsError, content.appointmentsError].filter(Boolean).join(" • ")}
                   </div>
                 ) : null}
 
@@ -2375,16 +2507,214 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
           <section className="bg-slate-50 px-6 pb-10 text-slate-900">
             <div className="mx-auto max-w-[1600px]">
               <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                   <div>
                     <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Doctors</p>
-                    <h2 className="mt-2 text-2xl font-semibold tracking-tight">Manage doctor approvals and visibility</h2>
-                    <p className="mt-2 text-sm leading-6 text-slate-600">
-                      Doctor management appears immediately at the top of this section.
-                    </p>
+                    <h2 className="mt-2 text-2xl font-semibold tracking-tight">Doctor approval and visibility management</h2>
+                    <p className="mt-2 text-sm leading-6 text-slate-600">Manage pending, approved, and hidden doctor profiles.</p>
                   </div>
-                  <p className="text-sm text-slate-500">{formatCount(content.doctors?.length ?? 0)} records</p>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <p className="text-sm text-slate-500">{formatCount(content.doctors?.length ?? 0)} records</p>
+                    <button
+                      type="button"
+                      onClick={openDoctorCreateForm}
+                      className="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold !text-white transition hover:bg-blue-700 hover:!text-white"
+                      style={{ color: "#ffffff" }}
+                    >
+                      Add Doctor
+                    </button>
+                  </div>
                 </div>
+
+                {isDoctorFormOpen ? (
+                  <div className="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">
+                          {editingDoctorId ? "Edit doctor" : "Create doctor"}
+                        </p>
+                        <h4 className="mt-2 text-lg font-semibold tracking-tight text-slate-950">
+                          {editingDoctorId ? "Update doctor account and profile" : "Add a new doctor account for the clinic"}
+                        </h4>
+                        <p className="mt-2 text-sm leading-6 text-slate-600">
+                          Active doctors are approved immediately. Pending doctors stay hidden until approved.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={closeDoctorForm}
+                        className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                      >
+                        Close
+                      </button>
+                    </div>
+
+                    <form onSubmit={handleDoctorCreateSubmit} className="mt-5 grid gap-4 md:grid-cols-2">
+                      <label className="space-y-2">
+                        <span className="text-sm font-medium text-slate-700">Full name</span>
+                        <input
+                          type="text"
+                          value={doctorCreationForm.name}
+                          onChange={(event) =>
+                            setDoctorCreationForm((current) => ({ ...current, name: event.target.value }))
+                          }
+                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                          placeholder="Dr. Jane Doe"
+                          required
+                        />
+                      </label>
+
+                      <label className="space-y-2">
+                        <span className="text-sm font-medium text-slate-700">Email</span>
+                        <input
+                          type="email"
+                          value={doctorCreationForm.email}
+                          onChange={(event) =>
+                            setDoctorCreationForm((current) => ({ ...current, email: event.target.value }))
+                          }
+                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                          placeholder="doctor@example.com"
+                          required
+                        />
+                      </label>
+
+                      <label className="space-y-2">
+                        <span className="text-sm font-medium text-slate-700">
+                          {editingDoctorId ? "Temporary password (optional)" : "Temporary password"}
+                        </span>
+                        <input
+                          type="password"
+                          value={doctorCreationForm.password}
+                          onChange={(event) =>
+                            setDoctorCreationForm((current) => ({ ...current, password: event.target.value }))
+                          }
+                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                          placeholder={editingDoctorId ? "Leave blank to keep current password" : "Create a temporary password"}
+                          required={!editingDoctorId}
+                        />
+                      </label>
+
+                      <label className="space-y-2">
+                        <span className="text-sm font-medium text-slate-700">Department</span>
+                        <select
+                          value={doctorCreationForm.departmentId}
+                          onChange={(event) =>
+                            setDoctorCreationForm((current) => ({ ...current, departmentId: event.target.value }))
+                          }
+                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                        >
+                          <option value="">Not assigned</option>
+                          {(content.departments ?? []).map((department) => (
+                            <option key={department._id ?? department.name} value={department._id ?? ""}>
+                              {department.name ?? "Unnamed department"}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="space-y-2">
+                        <span className="text-sm font-medium text-slate-700">Specialization</span>
+                        <input
+                          type="text"
+                          value={doctorCreationForm.specialization}
+                          onChange={(event) =>
+                            setDoctorCreationForm((current) => ({ ...current, specialization: event.target.value }))
+                          }
+                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                          placeholder="General Practice"
+                          required
+                        />
+                      </label>
+
+                      <label className="space-y-2">
+                        <span className="text-sm font-medium text-slate-700">Experience (years)</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={doctorCreationForm.experienceYears}
+                          onChange={(event) =>
+                            setDoctorCreationForm((current) => ({ ...current, experienceYears: event.target.value }))
+                          }
+                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                          placeholder="5"
+                        />
+                      </label>
+
+                      <label className="space-y-2">
+                        <span className="text-sm font-medium text-slate-700">Consultation fee (NPR)</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={doctorCreationForm.consultationFee}
+                          onChange={(event) =>
+                            setDoctorCreationForm((current) => ({ ...current, consultationFee: event.target.value }))
+                          }
+                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                          placeholder="1000"
+                        />
+                      </label>
+
+                      <label className="space-y-2 md:col-span-2">
+                        <span className="text-sm font-medium text-slate-700">Bio</span>
+                        <textarea
+                          value={doctorCreationForm.bio}
+                          onChange={(event) =>
+                            setDoctorCreationForm((current) => ({ ...current, bio: event.target.value }))
+                          }
+                          className="min-h-[120px] w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                          placeholder="Short doctor profile description"
+                        />
+                      </label>
+
+                      <label className="space-y-2 md:col-span-2">
+                        <span className="text-sm font-medium text-slate-700">Status</span>
+                        <select
+                          value={doctorCreationForm.status}
+                          onChange={(event) =>
+                            setDoctorCreationForm((current) => ({
+                              ...current,
+                              status: event.target.value as DoctorCreationStatus,
+                            }))
+                          }
+                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                        >
+                          <option value="pending">Pending</option>
+                          <option value="active">Active</option>
+                        </select>
+                      </label>
+
+                      <div className="md:col-span-2 flex flex-wrap items-center gap-3 pt-1">
+                        <button
+                          type="submit"
+                          disabled={isSavingDoctor}
+                          className="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold !text-white transition hover:bg-blue-700 hover:!text-white disabled:cursor-not-allowed disabled:opacity-70"
+                          style={{ color: "#ffffff" }}
+                        >
+                          {isSavingDoctor
+                            ? editingDoctorId
+                              ? "Saving..."
+                              : "Creating..."
+                            : editingDoctorId
+                              ? "Save changes"
+                              : "Create doctor"}
+                        </button>
+                        <p className="text-sm text-slate-500">The doctor can log in immediately with the temporary password.</p>
+                      </div>
+                    </form>
+                  </div>
+                ) : null}
+
+                {doctorCreationMessage ? (
+                  <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                    {doctorCreationMessage}
+                  </div>
+                ) : null}
+
+                {doctorCreationError ? (
+                  <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {doctorCreationError}
+                  </div>
+                ) : null}
 
                 {doctorsMessage ? (
                   <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
@@ -2409,25 +2739,25 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                     <p className="mt-2 text-sm text-slate-600">Doctor records will appear here once they are created.</p>
                   </div>
                 ) : (
-                  <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  <div className="mt-5 grid gap-4 xl:grid-cols-2">
                     {content.doctors.map((doctor) => {
                       const doctorId = doctor._id ?? "";
                       const statusMeta = doctorStatusMeta(doctor.profileStatus, doctor.isPublic);
-                      const canApprove = doctor.profileStatus !== "approved";
-                      const canReject = doctor.profileStatus !== "rejected";
-                      const canUnpublish = doctor.isPublic === true;
+                      const isPending = doctor.profileStatus === "pending";
+                      const isApproved = doctor.profileStatus === "approved";
+                      const isRejected = doctor.profileStatus === "rejected";
 
                       return (
                         <article
                           key={doctorId || `${typeof doctor.userId === "string" ? doctor.userId : doctor.userId?.email}-${doctor.specialization}`}
-                          className="rounded-2xl border border-white bg-white px-4 py-4 shadow-[0_6px_20px_rgba(15,23,42,0.03)]"
+                          className="rounded-3xl border border-white bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.05)]"
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div>
-                              <p className="text-sm font-semibold text-slate-950">
+                              <p className="text-base font-semibold text-slate-950">
                                 {typeof doctor.userId === "string" ? "Doctor" : doctor.userId?.name ?? "Doctor"}
                               </p>
-                              <p className="mt-1 text-xs text-slate-500">
+                              <p className="mt-1 text-sm text-slate-500">
                                 {typeof doctor.userId === "string" ? "Email unavailable" : doctor.userId?.email ?? "Email unavailable"}
                               </p>
                             </div>
@@ -2436,51 +2766,77 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                             </span>
                           </div>
 
-                          <div className="mt-3 space-y-2 text-sm text-slate-600">
-                            <div className="flex items-center justify-between gap-3">
-                              <span>Specialization</span>
-                              <span className="font-medium text-slate-900">{doctor.specialization ?? "Not set"}</span>
+                          <div className="mt-4 grid gap-3 md:grid-cols-2">
+                            <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Department</p>
+                              <p className="mt-2 text-sm font-medium text-slate-900">{resolveDoctorDepartmentName(doctor)}</p>
                             </div>
-                            <div className="flex items-center justify-between gap-3">
-                              <span>Department</span>
-                              <span className="font-medium text-slate-900">
-                                {typeof doctor.departmentId === "string" ? "â€”" : doctor.departmentId?.name ?? "â€”"}
-                              </span>
+                            <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Specialization</p>
+                              <p className="mt-2 text-sm font-medium text-slate-900">{doctor.specialization ?? "General Practice"}</p>
                             </div>
-                            <div className="flex items-center justify-between gap-3">
-                              <span>Public</span>
-                              <span className="font-medium text-slate-900">{doctor.isPublic ? "Yes" : "No"}</span>
+                            <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Consultation fee</p>
+                              <p className="mt-2 text-sm font-medium text-slate-900">{formatDoctorFee(doctor)}</p>
                             </div>
-                            <div className="flex items-center justify-between gap-3">
-                              <span>Available</span>
-                              <span className="font-medium text-slate-900">{doctor.isAvailable ? "Yes" : "No"}</span>
+                            <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Experience</p>
+                              <p className="mt-2 text-sm font-medium text-slate-900">
+                                {doctor.experienceYears != null ? `${doctor.experienceYears} years` : "Not set"}
+                              </p>
+                            </div>
+                            <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Public</p>
+                              <p className="mt-2 text-sm font-medium text-slate-900">{doctor.isPublic ? "Yes" : "No"}</p>
+                            </div>
+                            <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Available</p>
+                              <p className="mt-2 text-sm font-medium text-slate-900">{doctor.isAvailable ? "Yes" : "No"}</p>
                             </div>
                           </div>
 
-                          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                          <div className="mt-5 flex flex-wrap gap-3">
+                            {isPending || isRejected ? (
+                              <button
+                                type="button"
+                                onClick={() => handleDoctorApprovalAction(doctorId, "approve")}
+                                disabled={!doctorId || isUpdatingDoctorId === doctorId}
+                                className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-3 text-sm font-semibold !text-white transition hover:bg-blue-700 hover:!text-white disabled:cursor-not-allowed disabled:opacity-70"
+                                style={{ color: "#ffffff" }}
+                              >
+                                {isUpdatingDoctorId === doctorId ? "Updating..." : "Approve"}
+                              </button>
+                            ) : null}
+
+                            {isPending ? (
+                              <button
+                                type="button"
+                                onClick={() => handleDoctorApprovalAction(doctorId, "reject")}
+                                disabled={!doctorId || isUpdatingDoctorId === doctorId}
+                                className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-70"
+                              >
+                                Reject
+                              </button>
+                            ) : null}
+
+                            {isApproved ? (
+                              <button
+                                type="button"
+                                onClick={() => handleDoctorApprovalAction(doctorId, "unpublish")}
+                                disabled={!doctorId || isUpdatingDoctorId === doctorId}
+                                className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-70"
+                              >
+                                Unpublish
+                              </button>
+                            ) : null}
+
                             <button
                               type="button"
-                              onClick={() => handleDoctorApprovalAction(doctorId, "approve")}
-                              disabled={!doctorId || !canApprove || isUpdatingDoctorId === doctorId}
-                              className="inline-flex items-center justify-center rounded-full bg-[#020617] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#020617] hover:text-white disabled:cursor-not-allowed disabled:opacity-70"
+                              onClick={() => openDoctorEditForm(doctor)}
+                              disabled={!doctorId || isUpdatingDoctorId === doctorId}
+                              className="inline-flex items-center justify-center rounded-full border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-70"
                             >
-                              {isUpdatingDoctorId === doctorId ? "Updating..." : "Approve"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDoctorApprovalAction(doctorId, "reject")}
-                              disabled={!doctorId || !canReject || isUpdatingDoctorId === doctorId}
-                              className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-70"
-                            >
-                              Reject
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDoctorApprovalAction(doctorId, "unpublish")}
-                              disabled={!doctorId || !canUnpublish || isUpdatingDoctorId === doctorId}
-                              className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-70"
-                            >
-                              Unpublish
+                              Edit
                             </button>
                           </div>
                         </article>
@@ -2488,6 +2844,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                     })}
                   </div>
                 )}
+
               </div>
             </div>
           </section>
@@ -2649,8 +3006,8 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                   <div>
                     <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Appointments</p>
-                    <h2 className="mt-2 text-2xl font-semibold tracking-tight">Track appointment activity</h2>
-                    <p className="mt-2 text-sm leading-6 text-slate-600">Appointment records appear here with live status updates.</p>
+                    <h2 className="mt-2 text-2xl font-semibold tracking-tight">Appointment records</h2>
+                    <p className="mt-2 text-sm leading-6 text-slate-600">View live appointment activity with patient, doctor, time, and status details.</p>
                   </div>
                   <p className="text-sm text-slate-500">{formatCount(content.appointments?.length ?? 0)} total records</p>
                 </div>
@@ -2679,10 +3036,15 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                   <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                     {content.appointments.slice(0, 6).map((appointment) => {
                       const meta = appointmentStatusMeta(appointment.status);
+                      const appointmentId = appointment._id ?? "";
+                      const isPending = appointment.status === "pending";
+                      const isConfirmed = appointment.status === "confirmed";
+                      const isActionable = isPending || isConfirmed;
+
                       return (
                         <div
-                          key={appointment._id ?? `${appointment.appointmentDate}-${appointment.startTime}`}
-                          className="rounded-2xl border border-white bg-white px-4 py-4 shadow-[0_6px_20px_rgba(15,23,42,0.03)]"
+                          key={appointmentId || `${appointment.appointmentDate}-${appointment.startTime}`}
+                          className="rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]"
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div>
@@ -2709,6 +3071,51 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                               <span className="font-medium text-slate-900">{formatAppointmentDoctor(appointment.doctorId)}</span>
                             </div>
                           </div>
+
+                          {isActionable ? (
+                            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                              {isPending ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDoctorAppointmentAction(appointmentId, "confirmed")}
+                                  disabled={isUpdatingAppointmentId === appointmentId}
+                                  className="inline-flex items-center justify-center rounded-full bg-[#020617] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#020617] hover:text-white disabled:cursor-not-allowed disabled:opacity-70"
+                                >
+                                  {isUpdatingAppointmentId === appointmentId ? "Updating..." : "Confirm"}
+                                </button>
+                              ) : null}
+
+                              {isConfirmed ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDoctorAppointmentAction(appointmentId, "completed")}
+                                    disabled={isUpdatingAppointmentId === appointmentId}
+                                    className="inline-flex items-center justify-center rounded-full bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-70"
+                                  >
+                                    {isUpdatingAppointmentId === appointmentId ? "Updating..." : "Complete"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDoctorAppointmentAction(appointmentId, "no_show")}
+                                    disabled={isUpdatingAppointmentId === appointmentId}
+                                    className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-70"
+                                  >
+                                    {isUpdatingAppointmentId === appointmentId ? "Updating..." : "Mark no-show"}
+                                  </button>
+                                </>
+                              ) : null}
+
+                              <button
+                                type="button"
+                                onClick={() => handleDoctorAppointmentAction(appointmentId, "cancelled")}
+                                disabled={isUpdatingAppointmentId === appointmentId}
+                                className={`inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-70 ${isPending ? "" : "sm:col-span-2"}`}
+                              >
+                                {isUpdatingAppointmentId === appointmentId ? "Updating..." : "Cancel"}
+                              </button>
+                            </div>
+                          ) : null}
                         </div>
                       );
                     })}
@@ -2751,14 +3158,214 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
           <section className="bg-slate-50 px-6 pb-10 text-slate-900">
             <div className="mx-auto max-w-[1600px]">
               <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                   <div>
                     <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Doctors</p>
                     <h2 className="mt-2 text-2xl font-semibold tracking-tight">Doctor approval and visibility management</h2>
                     <p className="mt-2 text-sm leading-6 text-slate-600">Manage pending, approved, and hidden doctor profiles.</p>
                   </div>
-                  <p className="text-sm text-slate-500">{formatCount(content.doctors?.length ?? 0)} records</p>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <p className="text-sm text-slate-500">{formatCount(content.doctors?.length ?? 0)} records</p>
+                    <button
+                      type="button"
+                      onClick={openDoctorCreateForm}
+                      className="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold !text-white transition hover:bg-blue-700 hover:!text-white"
+                      style={{ color: "#ffffff" }}
+                    >
+                      Add Doctor
+                    </button>
+                  </div>
                 </div>
+
+                {isDoctorFormOpen ? (
+                  <div className="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">
+                          {editingDoctorId ? "Edit doctor" : "Create doctor"}
+                        </p>
+                        <h4 className="mt-2 text-lg font-semibold tracking-tight text-slate-950">
+                          {editingDoctorId ? "Update doctor account and profile" : "Add a new doctor account for the clinic"}
+                        </h4>
+                        <p className="mt-2 text-sm leading-6 text-slate-600">
+                          Active doctors are approved immediately. Pending doctors stay hidden until approved.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={closeDoctorForm}
+                        className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                      >
+                        Close
+                      </button>
+                    </div>
+
+                    <form onSubmit={handleDoctorCreateSubmit} className="mt-5 grid gap-4 md:grid-cols-2">
+                      <label className="space-y-2">
+                        <span className="text-sm font-medium text-slate-700">Full name</span>
+                        <input
+                          type="text"
+                          value={doctorCreationForm.name}
+                          onChange={(event) =>
+                            setDoctorCreationForm((current) => ({ ...current, name: event.target.value }))
+                          }
+                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                          placeholder="Dr. Jane Doe"
+                          required
+                        />
+                      </label>
+
+                      <label className="space-y-2">
+                        <span className="text-sm font-medium text-slate-700">Email</span>
+                        <input
+                          type="email"
+                          value={doctorCreationForm.email}
+                          onChange={(event) =>
+                            setDoctorCreationForm((current) => ({ ...current, email: event.target.value }))
+                          }
+                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                          placeholder="doctor@example.com"
+                          required
+                        />
+                      </label>
+
+                      <label className="space-y-2">
+                        <span className="text-sm font-medium text-slate-700">
+                          {editingDoctorId ? "Temporary password (optional)" : "Temporary password"}
+                        </span>
+                        <input
+                          type="password"
+                          value={doctorCreationForm.password}
+                          onChange={(event) =>
+                            setDoctorCreationForm((current) => ({ ...current, password: event.target.value }))
+                          }
+                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                          placeholder={editingDoctorId ? "Leave blank to keep current password" : "Create a temporary password"}
+                          required={!editingDoctorId}
+                        />
+                      </label>
+
+                      <label className="space-y-2">
+                        <span className="text-sm font-medium text-slate-700">Department</span>
+                        <select
+                          value={doctorCreationForm.departmentId}
+                          onChange={(event) =>
+                            setDoctorCreationForm((current) => ({ ...current, departmentId: event.target.value }))
+                          }
+                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                        >
+                          <option value="">Not assigned</option>
+                          {(content.departments ?? []).map((department) => (
+                            <option key={department._id ?? department.name} value={department._id ?? ""}>
+                              {department.name ?? "Unnamed department"}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="space-y-2">
+                        <span className="text-sm font-medium text-slate-700">Specialization</span>
+                        <input
+                          type="text"
+                          value={doctorCreationForm.specialization}
+                          onChange={(event) =>
+                            setDoctorCreationForm((current) => ({ ...current, specialization: event.target.value }))
+                          }
+                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                          placeholder="General Practice"
+                          required
+                        />
+                      </label>
+
+                      <label className="space-y-2">
+                        <span className="text-sm font-medium text-slate-700">Experience (years)</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={doctorCreationForm.experienceYears}
+                          onChange={(event) =>
+                            setDoctorCreationForm((current) => ({ ...current, experienceYears: event.target.value }))
+                          }
+                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                          placeholder="5"
+                        />
+                      </label>
+
+                      <label className="space-y-2">
+                        <span className="text-sm font-medium text-slate-700">Consultation fee (NPR)</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={doctorCreationForm.consultationFee}
+                          onChange={(event) =>
+                            setDoctorCreationForm((current) => ({ ...current, consultationFee: event.target.value }))
+                          }
+                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                          placeholder="1000"
+                        />
+                      </label>
+
+                      <label className="space-y-2 md:col-span-2">
+                        <span className="text-sm font-medium text-slate-700">Bio</span>
+                        <textarea
+                          value={doctorCreationForm.bio}
+                          onChange={(event) =>
+                            setDoctorCreationForm((current) => ({ ...current, bio: event.target.value }))
+                          }
+                          className="min-h-[120px] w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                          placeholder="Short doctor profile description"
+                        />
+                      </label>
+
+                      <label className="space-y-2 md:col-span-2">
+                        <span className="text-sm font-medium text-slate-700">Status</span>
+                        <select
+                          value={doctorCreationForm.status}
+                          onChange={(event) =>
+                            setDoctorCreationForm((current) => ({
+                              ...current,
+                              status: event.target.value as DoctorCreationStatus,
+                            }))
+                          }
+                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                        >
+                          <option value="pending">Pending</option>
+                          <option value="active">Active</option>
+                        </select>
+                      </label>
+
+                      <div className="md:col-span-2 flex flex-wrap items-center gap-3 pt-1">
+                        <button
+                          type="submit"
+                          disabled={isSavingDoctor}
+                          className="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold !text-white transition hover:bg-blue-700 hover:!text-white disabled:cursor-not-allowed disabled:opacity-70"
+                          style={{ color: "#ffffff" }}
+                        >
+                          {isSavingDoctor
+                            ? editingDoctorId
+                              ? "Saving..."
+                              : "Creating..."
+                            : editingDoctorId
+                              ? "Save changes"
+                              : "Create doctor"}
+                        </button>
+                        <p className="text-sm text-slate-500">The doctor can log in immediately with the temporary password.</p>
+                      </div>
+                    </form>
+                  </div>
+                ) : null}
+
+                {doctorCreationMessage ? (
+                  <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                    {doctorCreationMessage}
+                  </div>
+                ) : null}
+
+                {doctorCreationError ? (
+                  <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {doctorCreationError}
+                  </div>
+                ) : null}
 
                 {doctorsMessage ? (
                   <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
@@ -2783,25 +3390,25 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                     <p className="mt-2 text-sm text-slate-600">Doctor records will appear here once they are created.</p>
                   </div>
                 ) : (
-                  <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  <div className="mt-5 grid gap-4 xl:grid-cols-2">
                     {content.doctors.map((doctor) => {
                       const doctorId = doctor._id ?? "";
                       const statusMeta = doctorStatusMeta(doctor.profileStatus, doctor.isPublic);
-                      const canApprove = doctor.profileStatus !== "approved";
-                      const canReject = doctor.profileStatus !== "rejected";
-                      const canUnpublish = doctor.isPublic === true;
+                      const isPending = doctor.profileStatus === "pending";
+                      const isApproved = doctor.profileStatus === "approved";
+                      const isRejected = doctor.profileStatus === "rejected";
 
                       return (
                         <article
                           key={doctorId || `${typeof doctor.userId === "string" ? doctor.userId : doctor.userId?.email}-${doctor.specialization}`}
-                          className="rounded-2xl border border-white bg-white px-4 py-4 shadow-[0_6px_20px_rgba(15,23,42,0.03)]"
+                          className="rounded-3xl border border-white bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.05)]"
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div>
-                              <p className="text-sm font-semibold text-slate-950">
+                              <p className="text-base font-semibold text-slate-950">
                                 {typeof doctor.userId === "string" ? "Doctor" : doctor.userId?.name ?? "Doctor"}
                               </p>
-                              <p className="mt-1 text-xs text-slate-500">
+                              <p className="mt-1 text-sm text-slate-500">
                                 {typeof doctor.userId === "string" ? "Email unavailable" : doctor.userId?.email ?? "Email unavailable"}
                               </p>
                             </div>
@@ -2810,51 +3417,77 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                             </span>
                           </div>
 
-                          <div className="mt-3 space-y-2 text-sm text-slate-600">
-                            <div className="flex items-center justify-between gap-3">
-                              <span>Specialization</span>
-                              <span className="font-medium text-slate-900">{doctor.specialization ?? "Not set"}</span>
+                          <div className="mt-4 grid gap-3 md:grid-cols-2">
+                            <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Department</p>
+                              <p className="mt-2 text-sm font-medium text-slate-900">{resolveDoctorDepartmentName(doctor)}</p>
                             </div>
-                            <div className="flex items-center justify-between gap-3">
-                              <span>Department</span>
-                              <span className="font-medium text-slate-900">
-                                {typeof doctor.departmentId === "string" ? "—" : doctor.departmentId?.name ?? "—"}
-                              </span>
+                            <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Specialization</p>
+                              <p className="mt-2 text-sm font-medium text-slate-900">{doctor.specialization ?? "General Practice"}</p>
                             </div>
-                            <div className="flex items-center justify-between gap-3">
-                              <span>Public</span>
-                              <span className="font-medium text-slate-900">{doctor.isPublic ? "Yes" : "No"}</span>
+                            <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Consultation fee</p>
+                              <p className="mt-2 text-sm font-medium text-slate-900">{formatDoctorFee(doctor)}</p>
                             </div>
-                            <div className="flex items-center justify-between gap-3">
-                              <span>Available</span>
-                              <span className="font-medium text-slate-900">{doctor.isAvailable ? "Yes" : "No"}</span>
+                            <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Experience</p>
+                              <p className="mt-2 text-sm font-medium text-slate-900">
+                                {doctor.experienceYears != null ? `${doctor.experienceYears} years` : "Not set"}
+                              </p>
+                            </div>
+                            <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Public</p>
+                              <p className="mt-2 text-sm font-medium text-slate-900">{doctor.isPublic ? "Yes" : "No"}</p>
+                            </div>
+                            <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Available</p>
+                              <p className="mt-2 text-sm font-medium text-slate-900">{doctor.isAvailable ? "Yes" : "No"}</p>
                             </div>
                           </div>
 
-                          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                          <div className="mt-5 flex flex-wrap gap-3">
+                            {isPending || isRejected ? (
+                              <button
+                                type="button"
+                                onClick={() => handleDoctorApprovalAction(doctorId, "approve")}
+                                disabled={!doctorId || isUpdatingDoctorId === doctorId}
+                                className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-3 text-sm font-semibold !text-white transition hover:bg-blue-700 hover:!text-white disabled:cursor-not-allowed disabled:opacity-70"
+                                style={{ color: "#ffffff" }}
+                              >
+                                {isUpdatingDoctorId === doctorId ? "Updating..." : "Approve"}
+                              </button>
+                            ) : null}
+
+                            {isPending ? (
+                              <button
+                                type="button"
+                                onClick={() => handleDoctorApprovalAction(doctorId, "reject")}
+                                disabled={!doctorId || isUpdatingDoctorId === doctorId}
+                                className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-70"
+                              >
+                                Reject
+                              </button>
+                            ) : null}
+
+                            {isApproved ? (
+                              <button
+                                type="button"
+                                onClick={() => handleDoctorApprovalAction(doctorId, "unpublish")}
+                                disabled={!doctorId || isUpdatingDoctorId === doctorId}
+                                className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-70"
+                              >
+                                Unpublish
+                              </button>
+                            ) : null}
+
                             <button
                               type="button"
-                              onClick={() => handleDoctorApprovalAction(doctorId, "approve")}
-                              disabled={!doctorId || !canApprove || isUpdatingDoctorId === doctorId}
-                              className="inline-flex items-center justify-center rounded-full bg-[#020617] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#020617] hover:text-white disabled:cursor-not-allowed disabled:opacity-70"
+                              onClick={() => openDoctorEditForm(doctor)}
+                              disabled={!doctorId || isUpdatingDoctorId === doctorId}
+                              className="inline-flex items-center justify-center rounded-full border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-70"
                             >
-                              {isUpdatingDoctorId === doctorId ? "Updating..." : "Approve"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDoctorApprovalAction(doctorId, "reject")}
-                              disabled={!doctorId || !canReject || isUpdatingDoctorId === doctorId}
-                              className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-70"
-                            >
-                              Reject
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDoctorApprovalAction(doctorId, "unpublish")}
-                              disabled={!doctorId || !canUnpublish || isUpdatingDoctorId === doctorId}
-                              className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-70"
-                            >
-                              Unpublish
+                              Edit
                             </button>
                           </div>
                         </article>
@@ -2862,6 +3495,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                     })}
                   </div>
                 )}
+
               </div>
             </div>
           </section>

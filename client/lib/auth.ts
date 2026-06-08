@@ -25,7 +25,6 @@ export async function registerUser(input: {
   name: string;
   email: string;
   password: string;
-  role?: AuthRole;
 }) {
   return requestJson<AuthUser>("/api/auth/register", {
     method: "POST",

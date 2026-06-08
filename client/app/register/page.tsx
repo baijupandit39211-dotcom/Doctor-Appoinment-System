@@ -6,22 +6,7 @@ import { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 
 import { Nav as LandingNavbar } from "@/components/landing/landing";
-import { registerUser, type AuthRole } from "@/lib/auth";
-
-function redirectForRole(role: AuthRole) {
-  switch (role) {
-    case "patient":
-      return "/patient";
-    case "doctor":
-      return "/doctor";
-    case "clinic_admin":
-      return "/admin";
-    case "super_admin":
-      return "/superadmin";
-    default:
-      return "/";
-  }
-}
+import { registerUser } from "@/lib/auth";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -29,7 +14,6 @@ export default function RegisterPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [role, setRole] = useState<AuthRole>("patient");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
@@ -39,9 +23,8 @@ export default function RegisterPage() {
     setIsLoading(true);
 
     try {
-      const response = await registerUser({ name, email, password, role });
-      const nextRole = response.data?.role;
-      router.push(nextRole ? redirectForRole(nextRole) : "/");
+      await registerUser({ name, email, password });
+      router.push("/patient");
     } catch (registerError) {
       setError(registerError instanceof Error ? registerError.message : "Registration failed");
     } finally {
@@ -115,23 +98,6 @@ export default function RegisterPage() {
                     {showPassword ? <EyeOff className="size-5" /> : <Eye className="size-5" />}
                   </button>
                 </div>
-              </div>
-
-              <div className="space-y-2">
-                <label htmlFor="role" className="text-sm font-medium">
-                  Role
-                </label>
-                <select
-                  id="role"
-                  value={role}
-                  onChange={(event) => setRole(event.target.value as AuthRole)}
-                  className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-blue-500"
-                >
-                  <option value="patient">Patient</option>
-                  <option value="doctor">Doctor</option>
-                  <option value="clinic_admin">Clinic admin</option>
-                  <option value="super_admin">Super admin</option>
-                </select>
               </div>
 
               {error ? (

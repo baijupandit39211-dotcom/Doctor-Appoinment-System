@@ -13,13 +13,13 @@ import { AppError } from "../utils/appError.js";
 
 export async function register(req: Request, res: Response, next: NextFunction) {
   try {
-    const { name, email, password, role } = req.body ?? {};
+    const { name, email, password } = req.body ?? {};
 
     if (!name || !email || !password) {
       throw new AppError("Name, email, and password are required", 400);
     }
 
-    const result = await registerUser({ name, email, password, role });
+    const result = await registerUser({ name, email, password });
 
     setAuthCookie(res, result.token);
 

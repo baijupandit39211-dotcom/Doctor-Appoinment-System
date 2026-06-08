@@ -3,12 +3,10 @@ import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
 
 import { env } from "../config/env.js";
-import { getOrCreateDoctorProfile } from "./doctor.service.js";
 import { getOrCreatePatientProfile } from "./patient.service.js";
-import { queueNotificationForAdmins } from "./notification.service.js";
 import { AppError } from "../utils/appError.js";
 import { UserModel, type UserDocument } from "../models/User.model.js";
-import { userRoles, type UserRole } from "../models/types.js";
+import { type UserRole } from "../models/types.js";
 
 type PublicUser = {
   id: string;
@@ -40,16 +38,6 @@ function toPublicUser(user: UserLike): PublicUser {
     id: user._id.toString(),
     ...rest,
   };
-}
-
-function validateRole(role?: string): UserRole {
-  const normalizedRole = role ?? "patient";
-
-  if (!userRoles.includes(normalizedRole as UserRole)) {
-    throw new AppError("Invalid role", 400);
-  }
-
-  return normalizedRole as UserRole;
 }
 
 function signToken(userId: string, role: UserRole) {
@@ -99,11 +87,10 @@ export async function registerUser(input: {
   name: string;
   email: string;
   password: string;
-  role?: string;
 }) {
   const name = input.name.trim();
   const email = input.email.trim().toLowerCase();
-  const role = validateRole(input.role);
+  const role: UserRole = "patient";
 
   const existingUser = await UserModel.findOne({ email }).lean();
   if (existingUser) {
@@ -119,25 +106,11 @@ export async function registerUser(input: {
     role,
   });
 
-  if (role === "patient") {
-    try {
-      await getOrCreatePatientProfile(user._id.toString());
-    } catch (error) {
-      await UserModel.findByIdAndDelete(user._id);
-      throw error;
-    }
-  } else if (role === "doctor") {
-    try {
-      await getOrCreateDoctorProfile(user._id.toString());
-      void queueNotificationForAdmins({
-        title: "New doctor registration",
-        message: `${name} registered as a doctor and is waiting for approval.`,
-        type: "system",
-      });
-    } catch (error) {
-      await UserModel.findByIdAndDelete(user._id);
-      throw error;
-    }
+  try {
+    await getOrCreatePatientProfile(user._id.toString());
+  } catch (error) {
+    await UserModel.findByIdAndDelete(user._id);
+    throw error;
   }
 
   const token = signToken(user._id.toString(), role);
