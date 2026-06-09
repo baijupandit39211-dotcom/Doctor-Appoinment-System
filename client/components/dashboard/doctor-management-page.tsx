@@ -439,7 +439,7 @@ export function DoctorManagementPage({
               </div>
 
               <div className="flex flex-wrap gap-3">
-                {(doctor.profileStatus === "pending" || doctor.profileStatus === "rejected") ? (
+                {doctor.profileStatus === "pending" ? (
                   <button
                     type="button"
                     onClick={() => handleDoctorAction("approve")}
@@ -447,7 +447,7 @@ export function DoctorManagementPage({
                     className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-3 text-sm font-semibold !text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70"
                     style={{ color: "#ffffff" }}
                   >
-                    {isSavingAction ? "Updating..." : "Approve"}
+                      {isSavingAction ? "Updating..." : "Approve"}
                   </button>
                 ) : null}
                 {doctor.profileStatus === "pending" ? (
@@ -611,7 +611,7 @@ export function DoctorManagementPage({
                 </div>
 
                 <div className="flex flex-wrap gap-3">
-                  {(doctor.profileStatus === "pending" || doctor.profileStatus === "rejected") ? (
+                  {doctor.profileStatus === "pending" ? (
                     <button
                       type="button"
                       onClick={() => handleDoctorAction("approve")}

@@ -402,6 +402,19 @@ function doctorStatusMeta(status?: string, isPublic?: boolean) {
   }
 }
 
+function doctorCardStatusLabel(status?: string) {
+  switch (status) {
+    case "pending":
+      return "Pending";
+    case "approved":
+      return "Approved";
+    case "rejected":
+      return "Rejected";
+    default:
+      return status ?? "Unknown";
+  }
+}
+
 function countAppointmentsByStatus(appointments: AppointmentRecord[], status: string) {
   return appointments.filter((appointment) => appointment.status === status).length;
 }
@@ -2549,6 +2562,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                     <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Doctors</p>
                     <h2 className="mt-2 text-2xl font-semibold tracking-tight">Doctor approval and visibility management</h2>
                     <p className="mt-2 text-sm leading-6 text-slate-600">Manage pending, approved, and hidden doctor profiles.</p>
+                    <p className="mt-2 text-sm font-medium text-slate-500">Click a doctor card to view full details.</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
                     <p className="text-sm text-slate-500">{formatCount(content.doctors?.length ?? 0)} records</p>
@@ -2788,7 +2802,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                         <Link
                           key={doctorId || `${typeof doctor.userId === "string" ? doctor.userId : doctor.userId?.email}-${doctor.specialization}`}
                           href={doctorHref}
-                          className="group block h-full"
+                          className="group block h-full cursor-pointer"
                         >
                           <article className="h-full overflow-hidden rounded-3xl border border-white bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] transition group-hover:-translate-y-0.5 group-hover:shadow-[0_18px_42px_rgba(15,23,42,0.08)]">
                             <div className="bg-gradient-to-br from-slate-50 via-white to-sky-50 p-2.5">
@@ -2821,7 +2835,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                                   </p>
                                 </div>
                                 <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${statusMeta.className}`}>
-                                  {statusMeta.label}
+                                  {doctorCardStatusLabel(doctor.profileStatus)}
                                 </span>
                               </div>
 
@@ -3163,6 +3177,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                     <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Doctors</p>
                     <h2 className="mt-2 text-2xl font-semibold tracking-tight">Doctor approval and visibility management</h2>
                     <p className="mt-2 text-sm leading-6 text-slate-600">Manage pending, approved, and hidden doctor profiles.</p>
+                    <p className="mt-2 text-sm font-medium text-slate-500">Click a doctor card to view full details.</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
                     <p className="text-sm text-slate-500">{formatCount(content.doctors?.length ?? 0)} records</p>
@@ -3402,7 +3417,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                         <Link
                           key={doctorId || `${typeof doctor.userId === "string" ? doctor.userId : doctor.userId?.email}-${doctor.specialization}`}
                           href={doctorHref}
-                          className="group block h-full"
+                          className="group block h-full cursor-pointer"
                         >
                           <article className="h-full overflow-hidden rounded-3xl border border-white bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] transition group-hover:-translate-y-0.5 group-hover:shadow-[0_18px_42px_rgba(15,23,42,0.08)]">
                             <div className="bg-gradient-to-br from-slate-50 via-white to-sky-50 p-2.5">
@@ -3435,7 +3450,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                                   </p>
                                 </div>
                                 <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${statusMeta.className}`}>
-                                  {statusMeta.label}
+                                  {doctorCardStatusLabel(doctor.profileStatus)}
                                 </span>
                               </div>
 
