@@ -226,6 +226,37 @@ function readFileAsDataUrl(file: File) {
   });
 }
 
+const cloudinaryCloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME?.trim() ?? "";
+const cloudinaryUploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET?.trim() ?? "";
+
+async function uploadDoctorAvatar(file: File) {
+  if (!cloudinaryCloudName || !cloudinaryUploadPreset) {
+    return readFileAsDataUrl(file);
+  }
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("upload_preset", cloudinaryUploadPreset);
+  formData.append("folder", "docpulse/doctors");
+
+  const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudinaryCloudName}/image/upload`, {
+    method: "POST",
+    body: formData,
+  });
+
+  const payload = (await response.json().catch(() => null)) as { secure_url?: string; error?: { message?: string } } | null;
+
+  if (!response.ok) {
+    throw new Error(payload?.error?.message ?? "Failed to upload doctor photo");
+  }
+
+  if (!payload?.secure_url) {
+    throw new Error("Cloudinary upload did not return an image URL");
+  }
+
+  return payload.secure_url;
+}
+
 export function DoctorUpsertPage({
   expectedRole,
   roleLabel,
@@ -267,8 +298,8 @@ export function DoctorUpsertPage({
     }
 
     try {
-      const dataUrl = await readFileAsDataUrl(file);
-      setForm((current) => ({ ...current, avatar: dataUrl }));
+      const avatarUrl = await uploadDoctorAvatar(file);
+      setForm((current) => ({ ...current, avatar: avatarUrl }));
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : "Failed to load image");
     } finally {
@@ -544,7 +575,7 @@ export function DoctorUpsertPage({
                           Upload a doctor photo
                         </h2>
                         <p className="mt-1 text-sm text-slate-600">
-                          Use a clear headshot. This image is stored with the doctor account.
+                          Use a clear headshot. This image is uploaded to Cloudinary and stored with the doctor account.
                         </p>
                       </div>
                     </div>

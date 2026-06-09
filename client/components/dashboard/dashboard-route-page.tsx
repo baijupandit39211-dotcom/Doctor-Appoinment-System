@@ -8,6 +8,7 @@ import { BellRing } from "lucide-react";
 
 import { DashboardShell } from "./dashboard-shell";
 import { getCurrentUser, logoutUser, type AuthRole, type AuthUser } from "@/lib/auth";
+import { API_BASE_URL } from "@/lib/api";
 import { requestJson } from "@/lib/api-client";
 
 type DashboardNavItem = {
@@ -102,6 +103,7 @@ type DoctorRecord = {
     | {
         name?: string;
         email?: string;
+        avatar?: string;
       }
     | string;
   departmentId?:
@@ -247,6 +249,38 @@ function formatDoctorName(doctor?: DoctorRecord) {
   }
 
   return doctor.userId?.name ?? "Doctor";
+}
+
+function getDoctorInitials(doctor?: DoctorRecord) {
+  const name = formatDoctorName(doctor).trim();
+
+  if (!name) {
+    return "D";
+  }
+
+  return name
+    .split(/\s+/)
+    .map((part) => part[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+}
+
+function getDoctorAvatarSrc(doctor?: DoctorRecord) {
+  if (!doctor || !doctor.userId || typeof doctor.userId === "string") {
+    return "";
+  }
+
+  const avatar = doctor.userId.avatar?.trim();
+  if (!avatar) {
+    return "";
+  }
+
+  if (avatar.startsWith("data:") || avatar.startsWith("http://") || avatar.startsWith("https://")) {
+    return avatar;
+  }
+
+  return avatar.startsWith("/") ? `${API_BASE_URL}${avatar}` : `${API_BASE_URL}/${avatar}`;
 }
 
 function formatDoctorFee(doctor?: DoctorRecord) {
@@ -2742,107 +2776,69 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                     <p className="mt-2 text-sm text-slate-600">Doctor records will appear here once they are created.</p>
                   </div>
                 ) : (
-                  <div className="mt-5 grid gap-4 xl:grid-cols-2">
+                  <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                     {content.doctors.map((doctor) => {
                       const doctorId = doctor._id ?? "";
+                      const avatarSrc = getDoctorAvatarSrc(doctor);
                       const statusMeta = doctorStatusMeta(doctor.profileStatus, doctor.isPublic);
-                      const isPending = doctor.profileStatus === "pending";
-                      const isApproved = doctor.profileStatus === "approved";
-                      const isRejected = doctor.profileStatus === "rejected";
+                      const doctorsBasePath = user?.role === "super_admin" ? "/superadmin" : "/admin";
+                      const doctorHref = doctorId ? `${doctorsBasePath}/doctors/${doctorId}` : doctorsBasePath;
 
                       return (
-                        <article
+                        <Link
                           key={doctorId || `${typeof doctor.userId === "string" ? doctor.userId : doctor.userId?.email}-${doctor.specialization}`}
-                          className="rounded-3xl border border-white bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.05)]"
+                          href={doctorHref}
+                          className="group block h-full"
                         >
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-base font-semibold text-slate-950">
-                                {typeof doctor.userId === "string" ? "Doctor" : doctor.userId?.name ?? "Doctor"}
-                              </p>
-                              <p className="mt-1 text-sm text-slate-500">
-                                {typeof doctor.userId === "string" ? "Email unavailable" : doctor.userId?.email ?? "Email unavailable"}
-                              </p>
+                          <article className="h-full overflow-hidden rounded-3xl border border-white bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] transition group-hover:-translate-y-0.5 group-hover:shadow-[0_18px_42px_rgba(15,23,42,0.08)]">
+                            <div className="bg-gradient-to-br from-slate-50 via-white to-sky-50 p-2.5">
+                              <div className="h-[6.5rem] overflow-hidden rounded-[1rem] bg-white sm:h-28">
+                                {avatarSrc ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={avatarSrc}
+                                    alt={formatDoctorName(doctor)}
+                                    className="h-full w-full object-contain object-center p-0.5"
+                                  />
+                                ) : (
+                                  <div className="flex h-full items-center justify-center">
+                                    <div className="grid size-[3.75rem] place-items-center rounded-[1rem] bg-gradient-to-br from-blue-600 to-cyan-500 text-lg font-semibold text-white shadow-[0_12px_28px_rgba(37,99,235,0.2)]">
+                                      {getDoctorInitials(doctor)}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                            <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${statusMeta.className}`}>
-                              {statusMeta.label}
-                            </span>
-                          </div>
 
-                          <div className="mt-4 grid gap-3 md:grid-cols-2">
-                            <div className="rounded-2xl bg-slate-50 px-4 py-3">
-                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Department</p>
-                              <p className="mt-2 text-sm font-medium text-slate-900">{resolveDoctorDepartmentName(doctor)}</p>
-                            </div>
-                            <div className="rounded-2xl bg-slate-50 px-4 py-3">
-                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Specialization</p>
-                              <p className="mt-2 text-sm font-medium text-slate-900">{doctor.specialization ?? "General Practice"}</p>
-                            </div>
-                            <div className="rounded-2xl bg-slate-50 px-4 py-3">
-                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Consultation fee</p>
-                              <p className="mt-2 text-sm font-medium text-slate-900">{formatDoctorFee(doctor)}</p>
-                            </div>
-                            <div className="rounded-2xl bg-slate-50 px-4 py-3">
-                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Experience</p>
-                              <p className="mt-2 text-sm font-medium text-slate-900">
-                                {doctor.experienceYears != null ? `${doctor.experienceYears} years` : "Not set"}
-                              </p>
-                            </div>
-                            <div className="rounded-2xl bg-slate-50 px-4 py-3">
-                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Public</p>
-                              <p className="mt-2 text-sm font-medium text-slate-900">{doctor.isPublic ? "Yes" : "No"}</p>
-                            </div>
-                            <div className="rounded-2xl bg-slate-50 px-4 py-3">
-                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Available</p>
-                              <p className="mt-2 text-sm font-medium text-slate-900">{doctor.isAvailable ? "Yes" : "No"}</p>
-                            </div>
-                          </div>
+                            <div className="p-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-semibold text-slate-950">
+                                    {formatDoctorName(doctor)}
+                                  </p>
+                                  <p className="mt-1 truncate text-xs text-slate-500">
+                                    {doctor.specialization ?? "General Practice"}
+                                  </p>
+                                </div>
+                                <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${statusMeta.className}`}>
+                                  {statusMeta.label}
+                                </span>
+                              </div>
 
-                          <div className="mt-5 flex flex-wrap gap-3">
-                            {isPending || isRejected ? (
-                              <button
-                                type="button"
-                                onClick={() => handleDoctorApprovalAction(doctorId, "approve")}
-                                disabled={!doctorId || isUpdatingDoctorId === doctorId}
-                                className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-3 text-sm font-semibold !text-white transition hover:bg-blue-700 hover:!text-white disabled:cursor-not-allowed disabled:opacity-70"
-                                style={{ color: "#ffffff" }}
-                              >
-                                {isUpdatingDoctorId === doctorId ? "Updating..." : "Approve"}
-                              </button>
-                            ) : null}
-
-                            {isPending ? (
-                              <button
-                                type="button"
-                                onClick={() => handleDoctorApprovalAction(doctorId, "reject")}
-                                disabled={!doctorId || isUpdatingDoctorId === doctorId}
-                                className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-70"
-                              >
-                                Reject
-                              </button>
-                            ) : null}
-
-                            {isApproved ? (
-                              <button
-                                type="button"
-                                onClick={() => handleDoctorApprovalAction(doctorId, "unpublish")}
-                                disabled={!doctorId || isUpdatingDoctorId === doctorId}
-                                className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-70"
-                              >
-                                Unpublish
-                              </button>
-                            ) : null}
-
-                            <button
-                              type="button"
-                              onClick={() => openDoctorEditForm(doctor)}
-                              disabled={!doctorId || isUpdatingDoctorId === doctorId}
-                              className="inline-flex items-center justify-center rounded-full border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-70"
-                            >
-                              Edit
-                            </button>
-                          </div>
-                        </article>
+                              <div className="mt-3 flex items-center justify-start gap-3">
+                                <span
+                                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                                    doctor.isAvailable
+                                      ? "bg-emerald-50 text-emerald-700"
+                                      : "bg-slate-100 text-slate-600"
+                                  }`}
+                                >
+                                  {doctor.isAvailable ? "Available" : "Unavailable"}
+                                </span>
+                              </div>
+                            </div>
+                          </article>
+                        </Link>
                       );
                     })}
                   </div>
@@ -3394,107 +3390,69 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                     <p className="mt-2 text-sm text-slate-600">Doctor records will appear here once they are created.</p>
                   </div>
                 ) : (
-                  <div className="mt-5 grid gap-4 xl:grid-cols-2">
+                  <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                     {content.doctors.map((doctor) => {
                       const doctorId = doctor._id ?? "";
+                      const avatarSrc = getDoctorAvatarSrc(doctor);
                       const statusMeta = doctorStatusMeta(doctor.profileStatus, doctor.isPublic);
-                      const isPending = doctor.profileStatus === "pending";
-                      const isApproved = doctor.profileStatus === "approved";
-                      const isRejected = doctor.profileStatus === "rejected";
+                      const doctorsBasePath = user?.role === "super_admin" ? "/superadmin" : "/admin";
+                      const doctorHref = doctorId ? `${doctorsBasePath}/doctors/${doctorId}` : doctorsBasePath;
 
                       return (
-                        <article
+                        <Link
                           key={doctorId || `${typeof doctor.userId === "string" ? doctor.userId : doctor.userId?.email}-${doctor.specialization}`}
-                          className="rounded-3xl border border-white bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.05)]"
+                          href={doctorHref}
+                          className="group block h-full"
                         >
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-base font-semibold text-slate-950">
-                                {typeof doctor.userId === "string" ? "Doctor" : doctor.userId?.name ?? "Doctor"}
-                              </p>
-                              <p className="mt-1 text-sm text-slate-500">
-                                {typeof doctor.userId === "string" ? "Email unavailable" : doctor.userId?.email ?? "Email unavailable"}
-                              </p>
+                          <article className="h-full overflow-hidden rounded-3xl border border-white bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] transition group-hover:-translate-y-0.5 group-hover:shadow-[0_18px_42px_rgba(15,23,42,0.08)]">
+                            <div className="bg-gradient-to-br from-slate-50 via-white to-sky-50 p-2.5">
+                              <div className="h-[6.5rem] overflow-hidden rounded-[1rem] bg-white sm:h-28">
+                                {avatarSrc ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={avatarSrc}
+                                    alt={formatDoctorName(doctor)}
+                                    className="h-full w-full object-contain object-center p-0.5"
+                                  />
+                                ) : (
+                                  <div className="flex h-full items-center justify-center">
+                                    <div className="grid size-[3.75rem] place-items-center rounded-[1rem] bg-gradient-to-br from-blue-600 to-cyan-500 text-lg font-semibold text-white shadow-[0_12px_28px_rgba(37,99,235,0.2)]">
+                                      {getDoctorInitials(doctor)}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                            <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${statusMeta.className}`}>
-                              {statusMeta.label}
-                            </span>
-                          </div>
 
-                          <div className="mt-4 grid gap-3 md:grid-cols-2">
-                            <div className="rounded-2xl bg-slate-50 px-4 py-3">
-                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Department</p>
-                              <p className="mt-2 text-sm font-medium text-slate-900">{resolveDoctorDepartmentName(doctor)}</p>
-                            </div>
-                            <div className="rounded-2xl bg-slate-50 px-4 py-3">
-                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Specialization</p>
-                              <p className="mt-2 text-sm font-medium text-slate-900">{doctor.specialization ?? "General Practice"}</p>
-                            </div>
-                            <div className="rounded-2xl bg-slate-50 px-4 py-3">
-                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Consultation fee</p>
-                              <p className="mt-2 text-sm font-medium text-slate-900">{formatDoctorFee(doctor)}</p>
-                            </div>
-                            <div className="rounded-2xl bg-slate-50 px-4 py-3">
-                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Experience</p>
-                              <p className="mt-2 text-sm font-medium text-slate-900">
-                                {doctor.experienceYears != null ? `${doctor.experienceYears} years` : "Not set"}
-                              </p>
-                            </div>
-                            <div className="rounded-2xl bg-slate-50 px-4 py-3">
-                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Public</p>
-                              <p className="mt-2 text-sm font-medium text-slate-900">{doctor.isPublic ? "Yes" : "No"}</p>
-                            </div>
-                            <div className="rounded-2xl bg-slate-50 px-4 py-3">
-                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Available</p>
-                              <p className="mt-2 text-sm font-medium text-slate-900">{doctor.isAvailable ? "Yes" : "No"}</p>
-                            </div>
-                          </div>
+                            <div className="p-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-semibold text-slate-950">
+                                    {formatDoctorName(doctor)}
+                                  </p>
+                                  <p className="mt-1 truncate text-xs text-slate-500">
+                                    {doctor.specialization ?? "General Practice"}
+                                  </p>
+                                </div>
+                                <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${statusMeta.className}`}>
+                                  {statusMeta.label}
+                                </span>
+                              </div>
 
-                          <div className="mt-5 flex flex-wrap gap-3">
-                            {isPending || isRejected ? (
-                              <button
-                                type="button"
-                                onClick={() => handleDoctorApprovalAction(doctorId, "approve")}
-                                disabled={!doctorId || isUpdatingDoctorId === doctorId}
-                                className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-3 text-sm font-semibold !text-white transition hover:bg-blue-700 hover:!text-white disabled:cursor-not-allowed disabled:opacity-70"
-                                style={{ color: "#ffffff" }}
-                              >
-                                {isUpdatingDoctorId === doctorId ? "Updating..." : "Approve"}
-                              </button>
-                            ) : null}
-
-                            {isPending ? (
-                              <button
-                                type="button"
-                                onClick={() => handleDoctorApprovalAction(doctorId, "reject")}
-                                disabled={!doctorId || isUpdatingDoctorId === doctorId}
-                                className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-70"
-                              >
-                                Reject
-                              </button>
-                            ) : null}
-
-                            {isApproved ? (
-                              <button
-                                type="button"
-                                onClick={() => handleDoctorApprovalAction(doctorId, "unpublish")}
-                                disabled={!doctorId || isUpdatingDoctorId === doctorId}
-                                className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-70"
-                              >
-                                Unpublish
-                              </button>
-                            ) : null}
-
-                            <button
-                              type="button"
-                              onClick={() => openDoctorEditForm(doctor)}
-                              disabled={!doctorId || isUpdatingDoctorId === doctorId}
-                              className="inline-flex items-center justify-center rounded-full border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-70"
-                            >
-                              Edit
-                            </button>
-                          </div>
-                        </article>
+                              <div className="mt-3 flex items-center justify-start gap-3">
+                                <span
+                                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                                    doctor.isAvailable
+                                      ? "bg-emerald-50 text-emerald-700"
+                                      : "bg-slate-100 text-slate-600"
+                                  }`}
+                                >
+                                  {doctor.isAvailable ? "Available" : "Unavailable"}
+                                </span>
+                              </div>
+                            </div>
+                          </article>
+                        </Link>
                       );
                     })}
                   </div>

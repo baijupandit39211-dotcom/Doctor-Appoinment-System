@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { ArrowRight, CircleAlert, Stethoscope } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
+import { API_BASE_URL } from "@/lib/api";
 import { requestJson } from "@/lib/api-client";
 
 import {
@@ -25,7 +26,21 @@ type DoctorsPageState = {
 
 function getDoctorAvatarUrl(doctor: DoctorRecord) {
   const avatar = typeof doctor.userId === "object" && doctor.userId ? doctor.userId.avatar : undefined;
-  return typeof avatar === "string" && avatar.trim() ? avatar.trim() : "";
+  const trimmedAvatar = typeof avatar === "string" ? avatar.trim() : "";
+
+  if (!trimmedAvatar) {
+    return "";
+  }
+
+  if (
+    trimmedAvatar.startsWith("data:") ||
+    trimmedAvatar.startsWith("http://") ||
+    trimmedAvatar.startsWith("https://")
+  ) {
+    return trimmedAvatar;
+  }
+
+  return trimmedAvatar.startsWith("/") ? `${API_BASE_URL}${trimmedAvatar}` : `${API_BASE_URL}/${trimmedAvatar}`;
 }
 
 function getDoctorInitials(doctor: DoctorRecord) {
@@ -216,13 +231,13 @@ export function DoctorsPage() {
                 >
                   <Card className="overflow-hidden border-slate-200 bg-white shadow-[0_10px_36px_rgba(15,23,42,0.05)] transition group-hover:-translate-y-0.5 group-hover:shadow-[0_18px_42px_rgba(15,23,42,0.08)]">
                     <CardContent className="p-0">
-                      <div className="aspect-[4/3] bg-gradient-to-br from-sky-50 via-white to-cyan-50">
+                      <div className="h-44 bg-gradient-to-br from-sky-50 via-white to-cyan-50 sm:h-48">
                         {avatarUrl ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
                             src={avatarUrl}
                             alt={resolveDoctorName(doctor)}
-                            className="h-full w-full object-cover"
+                            className="h-full w-full object-cover object-top"
                           />
                         ) : (
                           <div className="flex h-full items-center justify-center">

@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { ChevronRight, Search, ShieldCheck, Stethoscope } from "lucide-react";
+import { ChevronRight, ShieldCheck, Stethoscope } from "lucide-react";
 
 import { NotificationBell } from "../notifications/notification-bell";
 
@@ -144,11 +144,7 @@ export function DashboardShell({
 
         <section className="min-w-0">
           <div className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-5 py-4 backdrop-blur-sm sm:px-8 lg:px-10">
-            <div className="flex items-center gap-4">
-              <div className="flex min-w-0 flex-1 items-center gap-3 rounded-full border border-slate-200 bg-slate-50 px-4 py-3 text-slate-500 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-                <Search className="size-5 shrink-0" />
-                <span className="truncate text-sm">Search patients, appointments, doctors...</span>
-              </div>
+            <div className="flex items-center justify-end gap-4">
               <NotificationBell user={user} />
             </div>
           </div>
