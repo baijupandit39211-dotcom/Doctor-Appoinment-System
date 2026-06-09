@@ -55,7 +55,7 @@ export function Nav() {
           <Link href="/login" className="text-sm font-medium px-4 py-2 rounded-full hover:bg-secondary transition">
             Sign In
           </Link>
-          <Link href="/register" className="inline-flex h-12 items-center justify-center rounded-full bg-[#020617] px-6 text-sm font-semibold !text-white hover:!text-white hover:bg-[#020617] shadow-[0_14px_30px_rgba(15,23,42,0.22)] [&_*]:!text-white transition">
+          <Link href="/register" className="inline-flex h-12 items-center justify-center rounded-full bg-blue-600 px-6 text-sm font-semibold !text-white hover:!text-white hover:bg-blue-700 shadow-[0_14px_30px_rgba(37,99,235,0.22)] [&_*]:!text-white transition">
             Get Started
           </Link>
         </div>
@@ -77,7 +77,7 @@ export function Nav() {
                   {l.label}
                 </a>
               ))}
-              <Link href="/register" onClick={() => setOpen(false)} className="inline-flex h-12 items-center justify-center rounded-full bg-[#020617] px-6 text-sm font-semibold !text-white text-center hover:!text-white [&_*]:!text-white">
+              <Link href="/register" onClick={() => setOpen(false)} className="inline-flex h-12 items-center justify-center rounded-full bg-blue-600 px-6 text-sm font-semibold !text-white text-center hover:!text-white hover:bg-blue-700 [&_*]:!text-white">
                 Get Started
               </Link>
             </div>
@@ -279,7 +279,7 @@ export function Hero() {
           transition={{ duration: 0.7, delay: 0.3 }}
           className="mt-9 flex flex-wrap items-center justify-center gap-3"
         >
-          <Link href="/register" className="group inline-flex h-14 items-center gap-3 rounded-full bg-[#020617] px-9 text-base font-semibold !text-white hover:!text-white hover:bg-[#020617] shadow-[0_16px_34px_rgba(15,23,42,0.24)] [&_*]:!text-white transition">
+          <Link href="/register" className="group inline-flex h-14 items-center gap-3 rounded-full bg-blue-600 px-9 text-base font-semibold !text-white hover:!text-white hover:bg-blue-700 shadow-[0_16px_34px_rgba(37,99,235,0.24)] [&_*]:!text-white transition">
             Start Free Trial
             <ArrowRight className="size-5 !text-white transition-transform group-hover:translate-x-0.5" />
           </Link>
@@ -743,7 +743,7 @@ export function Pricing() {
                   )}
                 </div>
                 <button className={`mt-6 w-full py-3 rounded-full text-sm font-medium transition ${
-                  p.pop ? "bg-background text-foreground hover:opacity-90" : "bg-foreground text-white hover:opacity-90"
+                  p.pop ? "bg-background text-foreground hover:opacity-90" : "bg-blue-600 text-white hover:bg-blue-700"
                 }`}>
                   {price === null ? "Contact Sales" : "Start Free Trial"}
                 </button>
@@ -839,7 +839,7 @@ export function FinalCTA() {
               Join 500+ clinics already running on DocPulse. Setup takes minutes.
             </p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <Link href="/register" className="group inline-flex h-16 items-center gap-3 rounded-full bg-[#020617] px-8 text-base font-semibold !text-white hover:!text-white hover:bg-[#020617] shadow-[0_16px_34px_rgba(15,23,42,0.24)] [&_*]:!text-white transition">
+              <Link href="/register" className="group inline-flex h-16 items-center gap-3 rounded-full bg-blue-600 px-8 text-base font-semibold !text-white hover:!text-white hover:bg-blue-700 shadow-[0_16px_34px_rgba(37,99,235,0.24)] [&_*]:!text-white transition">
                 Start Free Trial <ArrowRight className="size-5 !text-white transition-transform group-hover:translate-x-0.5" />
               </Link>
               <Link href="/doctors" className="px-6 py-3 rounded-full bg-white/15 backdrop-blur border border-white/30 text-white text-sm font-semibold hover:bg-white/25 transition">

@@ -21,6 +21,7 @@ type DashboardAction = {
 type DashboardNavItem = {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
+  href?: string;
 };
 
 type DashboardStatusChip = {
@@ -85,6 +86,20 @@ export function DashboardShell({
                 {navItems.map((item) => {
                   const Icon = item.icon;
                   const isActive = (activeNavLabel ?? navItems[0]?.label) === item.label;
+                  const itemClassName = `flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-medium transition ${
+                    isActive
+                      ? "bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-[0_12px_28px_rgba(2,6,23,0.16)]"
+                      : "text-slate-600 hover:bg-slate-100"
+                  }`;
+
+                  if (item.href) {
+                    return (
+                      <Link key={item.label} href={item.href} aria-current={isActive ? "page" : undefined} className={itemClassName}>
+                        <Icon className="size-4" />
+                        <span>{item.label}</span>
+                      </Link>
+                    );
+                  }
 
                   return (
                     <button
@@ -92,11 +107,7 @@ export function DashboardShell({
                       key={item.label}
                       onClick={() => onNavItemSelect?.(item.label)}
                       aria-current={isActive ? "page" : undefined}
-                      className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-medium transition ${
-                        isActive
-                          ? "bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-[0_12px_28px_rgba(2,6,23,0.16)]"
-                          : "text-slate-600 hover:bg-slate-100"
-                      }`}
+                      className={itemClassName}
                     >
                       <Icon className="size-4" />
                       <span>{item.label}</span>

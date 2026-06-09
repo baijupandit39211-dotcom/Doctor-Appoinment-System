@@ -136,10 +136,12 @@ export async function createDoctor(req: Request, res: Response, next: NextFuncti
       name,
       email,
       password,
+      avatar,
       clinicId,
       departmentId,
       specialization,
       qualification,
+      address,
       experienceYears,
       consultationFee,
       bio,
@@ -156,10 +158,12 @@ export async function createDoctor(req: Request, res: Response, next: NextFuncti
       name,
       email,
       password,
+      avatar,
       clinicId,
       departmentId,
       specialization,
       qualification,
+      address,
       experienceYears,
       consultationFee,
       bio,
@@ -192,6 +196,7 @@ export async function updateDoctor(req: Request, res: Response, next: NextFuncti
       name,
       email,
       password,
+      avatar,
       status,
       ...doctorFields
     } = body;
@@ -223,6 +228,10 @@ export async function updateDoctor(req: Request, res: Response, next: NextFuncti
 
       if (password?.trim()) {
         linkedUser.password = await bcrypt.hash(password, 12);
+      }
+
+      if (avatar !== undefined) {
+        linkedUser.avatar = avatar?.trim() || undefined;
       }
 
       await linkedUser.save();

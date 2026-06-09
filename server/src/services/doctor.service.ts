@@ -65,10 +65,12 @@ export async function createDoctorAccount(input: {
   name?: string;
   email?: string;
   password?: string;
+  avatar?: string;
   clinicId?: string;
   departmentId?: string;
   specialization?: string;
   qualification?: string;
+  address?: string;
   experienceYears?: number | string;
   consultationFee?: number | string;
   bio?: string;
@@ -115,6 +117,7 @@ export async function createDoctorAccount(input: {
         name,
         email,
         password: hashedPassword,
+        avatar: input.avatar?.trim() || undefined,
         role: "doctor",
         isActive: true,
       })) as DoctorUserRecord;
@@ -137,6 +140,7 @@ export async function createDoctorAccount(input: {
       departmentId: input.departmentId,
       specialization: input.specialization?.trim() || "General Practice",
       qualification: input.qualification?.trim() || undefined,
+      address: input.address?.trim() || undefined,
       experienceYears: toNumber(input.experienceYears, 0),
       consultationFee: toNumber(input.consultationFee, 0),
       bio: input.bio?.trim() || undefined,

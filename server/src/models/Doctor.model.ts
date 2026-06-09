@@ -8,6 +8,7 @@ const DoctorSchema = new Schema(
     departmentId: { type: Schema.Types.ObjectId, ref: "Department" },
     specialization: { type: String, required: true, trim: true },
     qualification: { type: String },
+    address: { type: String, trim: true },
     experienceYears: { type: Number, default: 0 },
     consultationFee: { type: Number, default: 0 },
     bio: { type: String },

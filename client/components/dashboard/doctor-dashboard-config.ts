@@ -1,4 +1,12 @@
-import { BarChart3, Building2, CalendarDays, Layers3, LayoutDashboard, Stethoscope } from "lucide-react";
+import {
+  BarChart3,
+  Building2,
+  CalendarDays,
+  Layers3,
+  LayoutDashboard,
+  Stethoscope,
+  UserPlus,
+} from "lucide-react";
 
 export type DoctorDashboardShellConfig = {
   expectedRole: "clinic_admin" | "super_admin";
@@ -7,7 +15,7 @@ export type DoctorDashboardShellConfig = {
   title: string;
   subtitle: string;
   basePath: "/admin" | "/superadmin";
-  navItems: { label: string; icon: typeof LayoutDashboard }[];
+  navItems: { label: string; icon: typeof LayoutDashboard; href?: string }[];
 };
 
 export function getDoctorDashboardConfig(role: "clinic_admin" | "super_admin"): DoctorDashboardShellConfig {
@@ -22,6 +30,7 @@ export function getDoctorDashboardConfig(role: "clinic_admin" | "super_admin"): 
       navItems: [
         { label: "Overview", icon: LayoutDashboard },
         { label: "Doctors", icon: Stethoscope },
+        { label: "Add Doctor", icon: UserPlus, href: "/superadmin/doctors/new" },
         { label: "Departments", icon: Layers3 },
         { label: "Appointments", icon: CalendarDays },
         { label: "Reports", icon: BarChart3 },
@@ -40,6 +49,7 @@ export function getDoctorDashboardConfig(role: "clinic_admin" | "super_admin"): 
     navItems: [
       { label: "Overview", icon: LayoutDashboard },
       { label: "Doctors", icon: Stethoscope },
+      { label: "Add Doctor", icon: UserPlus, href: "/admin/doctors/new" },
       { label: "Departments", icon: Building2 },
       { label: "Appointments", icon: CalendarDays },
       { label: "Reports", icon: BarChart3 },

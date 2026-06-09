@@ -170,7 +170,7 @@ export function DoctorDetailPage({ doctorId }: DoctorDetailPageProps) {
                 <button
                   type="button"
                   onClick={() => window.location.reload()}
-                  className="rounded-full bg-[#020617] px-5 py-3 text-sm font-semibold text-white hover:bg-slate-900"
+                  className="rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700"
                 >
                   Try again
                 </button>
@@ -353,7 +353,7 @@ export function DoctorDetailPage({ doctorId }: DoctorDetailPageProps) {
                     </p>
                     <Link
                       href="/login"
-                      className="mt-4 inline-flex items-center gap-2 rounded-full bg-[#020617] px-5 py-3 text-sm font-semibold text-white hover:bg-[#020617]"
+                      className="mt-4 inline-flex items-center gap-2 rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700"
                     >
                       Go to login <ArrowRight className="size-4" />
                     </Link>
@@ -426,7 +426,7 @@ export function DoctorDetailPage({ doctorId }: DoctorDetailPageProps) {
                     <button
                       type="submit"
                       disabled={isSubmitting}
-                      className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#020617] px-5 py-3.5 text-sm font-semibold text-white hover:bg-[#020617] disabled:cursor-not-allowed disabled:opacity-70"
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-blue-600 px-5 py-3.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70"
                     >
                       {isSubmitting ? "Submitting..." : "Book appointment"}
                       {!isSubmitting ? <ArrowRight className="size-4" /> : null}

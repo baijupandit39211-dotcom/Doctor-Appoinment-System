@@ -13,6 +13,7 @@ import { requestJson } from "@/lib/api-client";
 type DashboardNavItem = {
   label: string;
   icon: LucideIcon;
+  href?: string;
 };
 
 type DashboardRouteConfig = {
@@ -988,7 +989,8 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
     endTime: "",
     slotDurationMinutes: "30",
   });
-  const [activeSection, setActiveSection] = useState(() => config.navItems[0]?.label ?? "Overview");
+  const sectionNavItems = useMemo(() => config.navItems.filter((item) => !item.href), [config.navItems]);
+  const [activeSection, setActiveSection] = useState(() => sectionNavItems[0]?.label ?? "Overview");
   const [appointmentsMessage, setAppointmentsMessage] = useState("");
   const [doctorsMessage, setDoctorsMessage] = useState("");
   const [departmentsMessage, setDepartmentsMessage] = useState("");
@@ -1068,10 +1070,10 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
 
     const searchParams = new URLSearchParams(window.location.search);
     const sectionParam = searchParams.get("section") ?? "";
-    const defaultSection = config.navItems[0]?.label ?? "Overview";
-    const initialSection = config.navItems.some((item) => item.label === sectionParam) ? sectionParam : defaultSection;
+    const defaultSection = sectionNavItems[0]?.label ?? "Overview";
+    const initialSection = sectionNavItems.some((item) => item.label === sectionParam) ? sectionParam : defaultSection;
     setActiveSection(initialSection);
-  }, [config.expectedRole, config.navItems]);
+  }, [config.expectedRole, sectionNavItems]);
 
   useEffect(() => {
     if (user?.role === "doctor" && content?.doctorProfileId) {
@@ -1694,7 +1696,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
               <button
                 type="button"
                 onClick={() => router.refresh()}
-                className="rounded-full bg-[#020617] px-5 py-3 text-sm font-semibold text-white hover:bg-slate-900"
+                className="rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700"
               >
                 Try again
               </button>
@@ -1761,7 +1763,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                     </div>
                     <Link
                       href="/doctors"
-                      className="inline-flex items-center justify-center rounded-full bg-[#020617] px-5 py-3 text-sm font-semibold !text-white transition hover:bg-[#020617] hover:!text-white"
+                      className="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold !text-white transition hover:bg-blue-700 hover:!text-white"
                       style={{ color: "#ffffff" }}
                     >
                       Open doctors page
@@ -1879,7 +1881,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                                 </span>
                                 <Link
                                   href={doctorId ? `/doctors/${doctorId}` : "/doctors"}
-                                  className="inline-flex items-center justify-center rounded-full bg-[#020617] px-3 py-2 text-xs font-semibold !text-white shadow-sm transition hover:bg-[#020617] hover:!text-white"
+                                  className="inline-flex items-center justify-center rounded-full bg-blue-600 px-3 py-2 text-xs font-semibold !text-white shadow-sm transition hover:bg-blue-700 hover:!text-white"
                                   style={{ color: "#ffffff" }}
                                 >
                                   Book now
@@ -1934,7 +1936,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                             <div className="mt-5 flex flex-wrap gap-3">
                               <Link
                                 href={doctorId ? `/doctors/${doctorId}` : "/doctors"}
-                                className="inline-flex items-center justify-center rounded-full bg-[#020617] px-4 py-2.5 text-sm font-semibold !text-white shadow-sm transition hover:bg-[#020617] hover:!text-white"
+                                className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2.5 text-sm font-semibold !text-white shadow-sm transition hover:bg-blue-700 hover:!text-white"
                                 style={{ color: "#ffffff" }}
                               >
                                 View details
@@ -2187,7 +2189,8 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                     <button
                       type="submit"
                       disabled={isSavingAvailability}
-                      className="inline-flex items-center justify-center rounded-full bg-[#020617] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#020617] hover:text-white disabled:cursor-not-allowed disabled:opacity-70"
+                      className="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold !text-white transition hover:bg-blue-700 hover:!text-white disabled:cursor-not-allowed disabled:opacity-70"
+                      style={{ color: "#ffffff" }}
                     >
                       {isSavingAvailability
                         ? editingAvailabilityId
@@ -2370,14 +2373,14 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                             {isActionable ? (
                               <div className="mt-5 grid gap-3 sm:grid-cols-2">
                                 {isPending ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDoctorAppointmentAction(appointmentId, "confirmed")}
-                                    disabled={isUpdatingAppointmentId === appointmentId}
-                                    className="inline-flex items-center justify-center rounded-full bg-[#020617] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#020617] hover:text-white disabled:cursor-not-allowed disabled:opacity-70"
-                                  >
-                                    {isUpdatingAppointmentId === appointmentId ? "Updating..." : "Confirm"}
-                                  </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDoctorAppointmentAction(appointmentId, "confirmed")}
+                                  disabled={isUpdatingAppointmentId === appointmentId}
+                                  className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-70"
+                                >
+                                  {isUpdatingAppointmentId === appointmentId ? "Updating..." : "Confirm"}
+                                </button>
                                 ) : null}
 
                                 {isConfirmed ? (
@@ -2924,7 +2927,8 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                     <button
                       type="submit"
                       disabled={isSavingDepartment}
-                      className="inline-flex items-center justify-center rounded-full bg-[#020617] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#020617] hover:text-white disabled:cursor-not-allowed disabled:opacity-70"
+                      className="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold !text-white transition hover:bg-blue-700 hover:!text-white disabled:cursor-not-allowed disabled:opacity-70"
+                      style={{ color: "#ffffff" }}
                     >
                       {isSavingDepartment
                         ? editingDepartmentId
@@ -3079,7 +3083,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                                   type="button"
                                   onClick={() => handleDoctorAppointmentAction(appointmentId, "confirmed")}
                                   disabled={isUpdatingAppointmentId === appointmentId}
-                                  className="inline-flex items-center justify-center rounded-full bg-[#020617] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#020617] hover:text-white disabled:cursor-not-allowed disabled:opacity-70"
+                                  className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-70"
                                 >
                                   {isUpdatingAppointmentId === appointmentId ? "Updating..." : "Confirm"}
                                 </button>
@@ -3570,13 +3574,14 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                   </div>
 
                   <div className="mt-5 flex flex-wrap gap-3">
-                    <button
-                      type="submit"
-                      disabled={isSavingDepartment}
-                      className="inline-flex items-center justify-center rounded-full bg-[#020617] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#020617] hover:text-white disabled:cursor-not-allowed disabled:opacity-70"
-                    >
-                      {isSavingDepartment
-                        ? editingDepartmentId
+                <button
+                  type="submit"
+                  disabled={isSavingDepartment}
+                  className="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold !text-white transition hover:bg-blue-700 hover:!text-white disabled:cursor-not-allowed disabled:opacity-70"
+                  style={{ color: "#ffffff" }}
+                >
+                  {isSavingDepartment
+                    ? editingDepartmentId
                           ? "Saving..."
                           : "Creating..."
                         : editingDepartmentId
@@ -3728,7 +3733,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                                   type="button"
                                   onClick={() => handleDoctorAppointmentAction(appointmentId, "confirmed")}
                                   disabled={isUpdatingAppointmentId === appointmentId}
-                                  className="inline-flex items-center justify-center rounded-full bg-[#020617] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#020617] hover:text-white disabled:cursor-not-allowed disabled:opacity-70"
+                                  className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-70"
                                 >
                                   {isUpdatingAppointmentId === appointmentId ? "Updating..." : "Confirm"}
                                 </button>

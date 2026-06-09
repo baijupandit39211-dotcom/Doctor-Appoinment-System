@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 
 import { Nav as LandingNavbar } from "@/components/landing/landing";
@@ -27,18 +27,9 @@ export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-
-  useEffect(() => {
-    const rememberedEmail = window.localStorage.getItem("docpulse-remembered-email");
-    if (rememberedEmail) {
-      setEmail(rememberedEmail);
-      setRememberMe(true);
-    }
-  }, []);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -48,11 +39,6 @@ export default function LoginPage() {
     try {
       const response = await loginUser({ email, password });
       const role = response.data?.role;
-      if (rememberMe) {
-        window.localStorage.setItem("docpulse-remembered-email", email);
-      } else {
-        window.localStorage.removeItem("docpulse-remembered-email");
-      }
       router.push(role ? redirectForRole(role) : "/");
     } catch (loginError) {
       setError(loginError instanceof Error ? loginError.message : "Login failed");
@@ -112,16 +98,7 @@ export default function LoginPage() {
                     {showPassword ? <EyeOff className="size-5" /> : <Eye className="size-5" />}
                   </button>
                 </div>
-                <div className="flex items-center justify-between gap-4 pt-1 text-xs font-medium">
-                  <label className="flex items-center gap-2 text-slate-600">
-                    <input
-                      type="checkbox"
-                      checked={rememberMe}
-                      onChange={(event) => setRememberMe(event.target.checked)}
-                      className="size-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <span>Remember me</span>
-                  </label>
+                <div className="flex items-center justify-end gap-4 pt-1 text-xs font-medium">
                   <Link href="/forgot-password" className="whitespace-nowrap text-blue-600 hover:underline">
                     Forgot password?
                   </Link>

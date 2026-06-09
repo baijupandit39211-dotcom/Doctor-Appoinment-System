@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, Loader2, Upload, X } from "lucide-react";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,7 @@ import { requestJson } from "@/lib/api-client";
 type DashboardNavItem = {
   label: string;
   icon: LucideIcon;
+  href?: string;
 };
 
 type DashboardSectionKey = "Overview" | "Doctors" | "Departments" | "Appointments" | "Reports";
@@ -43,13 +44,16 @@ type DoctorUserRef = {
   _id?: string;
   name?: string;
   email?: string;
+  avatar?: string;
 };
 
 type DoctorRecord = {
   _id?: string;
   userId?: DoctorUserRef | string;
   departmentId?: DoctorDepartmentRef | string;
+  address?: string;
   specialization?: string;
+  qualification?: string;
   experienceYears?: number;
   consultationFee?: number;
   bio?: string;
@@ -64,11 +68,14 @@ type DepartmentRecord = {
 };
 
 type DoctorFormState = {
+  avatar: string;
   name: string;
   email: string;
   password: string;
   departmentId: string;
   specialization: string;
+  qualification: string;
+  address: string;
   experienceYears: string;
   consultationFee: string;
   bio: string;
@@ -120,6 +127,18 @@ function getDoctorUserEmail(user?: DoctorRecord["userId"]) {
   return user.email ?? "";
 }
 
+function getDoctorUserAvatar(user?: DoctorRecord["userId"]) {
+  if (!user || typeof user === "string") {
+    return "";
+  }
+
+  return user.avatar ?? "";
+}
+
+function getDoctorAddress(doctor?: DoctorRecord | null) {
+  return doctor?.address ?? "";
+}
+
 function getDoctorBasePath(role?: AuthRole) {
   return role === "super_admin" ? "/superadmin" : "/admin";
 }
@@ -138,11 +157,14 @@ function buildDoctorSectionHref(basePath: "/admin" | "/superadmin", mode: Doctor
 
 function buildDoctorFormState(doctor?: DoctorRecord | null): DoctorFormState {
   return {
+    avatar: getDoctorUserAvatar(doctor?.userId),
     name: getDoctorUserName(doctor?.userId),
     email: getDoctorUserEmail(doctor?.userId),
     password: "",
     departmentId: getDoctorDepartmentId(doctor?.departmentId),
-    specialization: doctor?.specialization ?? "General Practice",
+    specialization: doctor?.specialization ?? "General Physician",
+    qualification: doctor?.qualification ?? "",
+    address: getDoctorAddress(doctor),
     experienceYears: doctor?.experienceYears != null ? String(doctor.experienceYears) : "0",
     consultationFee: doctor?.consultationFee != null ? String(doctor.consultationFee) : "0",
     bio: doctor?.bio ?? "",
@@ -157,16 +179,51 @@ function buildDoctorFormState(doctor?: DoctorRecord | null): DoctorFormState {
 
 function buildDoctorSubmitPayload(form: DoctorFormState) {
   return {
+    avatar: form.avatar.trim() || undefined,
     name: form.name.trim(),
     email: form.email.trim(),
     ...(form.password.trim() ? { password: form.password.trim() } : {}),
     departmentId: form.departmentId || undefined,
-    specialization: form.specialization.trim() || "General Practice",
+    specialization: form.specialization.trim() || "General Physician",
+    qualification: form.qualification.trim() || undefined,
+    address: form.address.trim() || undefined,
     experienceYears: Number(form.experienceYears || 0),
     consultationFee: Number(form.consultationFee || 0),
     bio: form.bio.trim(),
     status: form.status,
   };
+}
+
+const specializationOptions = [
+  "General Physician",
+  "Cardiologist",
+  "Dermatologist",
+  "Endocrinologist",
+  "ENT Specialist",
+  "Gastroenterologist",
+  "Gynecologist",
+  "Neurologist",
+  "Oncologist",
+  "Ophthalmologist",
+  "Orthopedic Surgeon",
+  "Pediatrician",
+  "Psychiatrist",
+  "Radiologist",
+  "Urologist",
+  "Dentist",
+  "General Surgeon",
+  "Nephrologist",
+  "Pulmonologist",
+  "Other",
+] as const;
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+    reader.onerror = () => reject(new Error("Failed to read image file"));
+    reader.readAsDataURL(file);
+  });
 }
 
 export function DoctorUpsertPage({
@@ -186,12 +243,38 @@ export function DoctorUpsertPage({
   const [doctor, setDoctor] = useState<DoctorRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [form, setForm] = useState<DoctorFormState>(() => buildDoctorFormState());
+  const avatarPreview = form.avatar.trim();
+  const specializationSelectOptions = useMemo(() => {
+    const options: string[] = [...specializationOptions];
+
+    if (form.specialization && !options.includes(form.specialization)) {
+      options.unshift(form.specialization);
+    }
+
+    return options;
+  }, [form.specialization]);
 
   const returnHref = useMemo(() => buildReturnHref(basePath), [basePath]);
-  const doctorSectionHref = useMemo(() => buildDoctorSectionHref(basePath, mode, doctorId), [basePath, mode, doctorId]);
+
+  async function handleAvatarFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      setForm((current) => ({ ...current, avatar: dataUrl }));
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : "Failed to load image");
+    } finally {
+      event.target.value = "";
+    }
+  }
 
   useEffect(() => {
     let active = true;
@@ -327,7 +410,7 @@ export function DoctorUpsertPage({
         actions={[]}
         highlights={[]}
         nextSteps={[]}
-        activeNavLabel="Doctors"
+        activeNavLabel={mode === "create" ? "Add Doctor" : "Doctors"}
         user={currentUser}
         onNavItemSelect={(label) => router.push(`${basePath}?section=${encodeURIComponent(label)}`)}
         onLogout={handleLogout}
@@ -358,7 +441,7 @@ export function DoctorUpsertPage({
         actions={[]}
         highlights={[]}
         nextSteps={[]}
-        activeNavLabel="Doctors"
+        activeNavLabel={mode === "create" ? "Add Doctor" : "Doctors"}
         user={currentUser}
         onNavItemSelect={(label) => router.push(`${basePath}?section=${encodeURIComponent(label)}`)}
         onLogout={handleLogout}
@@ -371,12 +454,12 @@ export function DoctorUpsertPage({
                 <h1 className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">Unable to load doctor form</h1>
                 <p className="mt-3 text-sm leading-6 text-slate-600">{error}</p>
                 <div className="mt-6 flex flex-wrap justify-center gap-3">
-                  <Link
-                    href={returnHref}
-                    className="inline-flex items-center gap-2 rounded-full bg-[#020617] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#020617] hover:text-white"
-                  >
-                    <ArrowLeft className="size-4" />
-                    Back to Doctors
+                <Link
+                  href={returnHref}
+                  className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 hover:text-white"
+                >
+                  <ArrowLeft className="size-4" />
+                  Back to Doctors
                   </Link>
                 </div>
               </CardContent>
@@ -398,7 +481,7 @@ export function DoctorUpsertPage({
       actions={[]}
       highlights={[]}
       nextSteps={[]}
-      activeNavLabel="Doctors"
+      activeNavLabel={mode === "create" ? "Add Doctor" : "Doctors"}
       user={currentUser}
       onNavItemSelect={(label) => router.push(`${basePath}?section=${encodeURIComponent(label)}`)}
       onLogout={handleLogout}
@@ -441,8 +524,59 @@ export function DoctorUpsertPage({
             ) : null}
 
             <form onSubmit={handleSubmit} className="mt-6 grid gap-4 md:grid-cols-2">
+              <div className="md:col-span-2">
+                <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-5">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="grid size-20 shrink-0 place-items-center overflow-hidden rounded-3xl border border-slate-200 bg-white text-slate-400 shadow-sm">
+                        {avatarPreview ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={avatarPreview} alt="Doctor profile preview" className="size-full object-cover" />
+                        ) : (
+                          <Upload className="size-7" />
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">
+                          Doctor profile picture
+                        </p>
+                        <h2 className="mt-1 text-base font-semibold tracking-tight text-slate-950">
+                          Upload a doctor photo
+                        </h2>
+                        <p className="mt-1 text-sm text-slate-600">
+                          Use a clear headshot. This image is stored with the doctor account.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3">
+                      <label className="inline-flex cursor-pointer items-center justify-center rounded-full bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700">
+                        <Upload className="mr-2 size-4" />
+                        {avatarPreview ? "Replace photo" : "Upload photo"}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleAvatarFileChange}
+                        />
+                      </label>
+                      {avatarPreview ? (
+                        <button
+                          type="button"
+                          onClick={() => setForm((current) => ({ ...current, avatar: "" }))}
+                          className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                        >
+                          <X className="mr-2 size-4" />
+                          Remove
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <label className="space-y-2">
-                <span className="text-sm font-medium text-slate-700">Full name</span>
+                <span className="text-sm font-medium text-slate-700">Doctor name</span>
                 <Input
                   type="text"
                   value={form.name}
@@ -454,7 +588,7 @@ export function DoctorUpsertPage({
               </label>
 
               <label className="space-y-2">
-                <span className="text-sm font-medium text-slate-700">Email</span>
+                <span className="text-sm font-medium text-slate-700">Email address</span>
                 <Input
                   type="email"
                   value={form.email}
@@ -469,14 +603,24 @@ export function DoctorUpsertPage({
                 <span className="text-sm font-medium text-slate-700">
                   {mode === "edit" ? "Temporary password (optional)" : "Temporary password"}
                 </span>
-                <Input
-                  type="password"
-                  value={form.password}
-                  onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
-                  className="h-12 rounded-2xl border-slate-300 bg-slate-50"
-                  placeholder={mode === "edit" ? "Leave blank to keep current password" : "Create a temporary password"}
-                  required={mode === "create"}
-                />
+                <div className="relative">
+                  <Input
+                    type={showPassword ? "text" : "password"}
+                    value={form.password}
+                    onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
+                    className="h-12 rounded-2xl border-slate-300 bg-slate-50 pr-12"
+                    placeholder={mode === "edit" ? "Leave blank to keep current password" : "Create a temporary password"}
+                    required={mode === "create"}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((current) => !current)}
+                    className="absolute inset-y-0 right-3 flex items-center text-slate-500 transition hover:text-slate-700"
+                    aria-label={showPassword ? "Hide temporary password" : "Show temporary password"}
+                  >
+                    {showPassword ? <EyeOff className="size-5" /> : <Eye className="size-5" />}
+                  </button>
+                </div>
               </label>
 
               <label className="space-y-2">
@@ -496,14 +640,40 @@ export function DoctorUpsertPage({
               </label>
 
               <label className="space-y-2">
-                <span className="text-sm font-medium text-slate-700">Specialization</span>
-                <Input
-                  type="text"
+                <span className="text-sm font-medium text-slate-700">Speciality</span>
+                <select
                   value={form.specialization}
                   onChange={(event) => setForm((current) => ({ ...current, specialization: event.target.value }))}
+                  className="h-12 w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                >
+                  {specializationSelectOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                  <option value="Other">Other</option>
+                </select>
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-sm font-medium text-slate-700">Degree / qualification</span>
+                <Input
+                  type="text"
+                  value={form.qualification}
+                  onChange={(event) => setForm((current) => ({ ...current, qualification: event.target.value }))}
                   className="h-12 rounded-2xl border-slate-300 bg-slate-50"
-                  placeholder="General Practice"
-                  required
+                  placeholder="MBBS, MD, MS"
+                />
+              </label>
+
+              <label className="space-y-2 md:col-span-2">
+                <span className="text-sm font-medium text-slate-700">Address</span>
+                <Input
+                  type="text"
+                  value={form.address}
+                  onChange={(event) => setForm((current) => ({ ...current, address: event.target.value }))}
+                  className="h-12 rounded-2xl border-slate-300 bg-slate-50"
+                  placeholder="Clinic street address"
                 />
               </label>
 
@@ -532,17 +702,17 @@ export function DoctorUpsertPage({
               </label>
 
               <label className="space-y-2 md:col-span-2">
-                <span className="text-sm font-medium text-slate-700">Bio</span>
+                <span className="text-sm font-medium text-slate-700">Short bio</span>
                 <Textarea
                   value={form.bio}
                   onChange={(event) => setForm((current) => ({ ...current, bio: event.target.value }))}
                   className="min-h-[140px] rounded-2xl border-slate-300 bg-slate-50"
-                  placeholder="Short doctor profile description"
+                  placeholder="Brief doctor profile description"
                 />
               </label>
 
               <label className="space-y-2 md:col-span-2">
-                <span className="text-sm font-medium text-slate-700">Status</span>
+                <span className="text-sm font-medium text-slate-700">Profile status</span>
                 <select
                   value={form.status}
                   onChange={(event) =>
@@ -562,7 +732,8 @@ export function DoctorUpsertPage({
                 <button
                   type="submit"
                   disabled={isSaving}
-                  className="inline-flex items-center justify-center rounded-full bg-[#020617] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#020617] hover:text-white disabled:cursor-not-allowed disabled:opacity-70"
+                  className="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold !text-white transition hover:bg-blue-700 hover:!text-white disabled:cursor-not-allowed disabled:opacity-70"
+                  style={{ color: "#ffffff" }}
                 >
                   {isSaving ? "Saving..." : mode === "edit" ? "Save changes" : "Create doctor"}
                 </button>

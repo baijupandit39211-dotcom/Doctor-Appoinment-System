@@ -1,7 +1,7 @@
 "use client";
 
 import { DashboardRoutePage } from "@/components/dashboard/dashboard-route-page";
-import { CalendarDays, LayoutDashboard, Stethoscope, BarChart3, Building2 } from "lucide-react";
+import { CalendarDays, LayoutDashboard, Stethoscope, BarChart3, Building2, UserPlus } from "lucide-react";
 
 export default function AdminPage() {
   return (
@@ -16,6 +16,7 @@ export default function AdminPage() {
         navItems: [
           { label: "Overview", icon: LayoutDashboard },
           { label: "Doctors", icon: Stethoscope },
+          { label: "Add Doctor", icon: UserPlus, href: "/admin/doctors/new" },
           { label: "Departments", icon: Building2 },
           { label: "Appointments", icon: CalendarDays },
           { label: "Reports", icon: BarChart3 },

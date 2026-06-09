@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Layers3,
   Stethoscope,
+  UserPlus,
 } from "lucide-react";
 
 export default function SuperAdminPage() {
@@ -22,6 +23,7 @@ export default function SuperAdminPage() {
         navItems: [
           { label: "Overview", icon: LayoutDashboard },
           { label: "Doctors", icon: Stethoscope },
+          { label: "Add Doctor", icon: UserPlus, href: "/superadmin/doctors/new" },
           { label: "Departments", icon: Layers3 },
           { label: "Appointments", icon: CalendarDays },
           { label: "Reports", icon: BarChart3 },
