@@ -5,12 +5,12 @@ import { useEffect, useState } from "react";
 import { ArrowRight, CircleAlert, Stethoscope } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
-import { API_BASE_URL } from "@/lib/api";
 import { requestJson } from "@/lib/api-client";
 
 import {
   type AvailabilityRecord,
   type DoctorRecord,
+  getDoctorAvatarUrl,
   getNextAvailabilityLabel,
   loadCurrentUserSafe,
   resolveDoctorName,
@@ -23,25 +23,6 @@ type DoctorsPageState = {
   isAuthenticated: boolean;
   availabilityByDoctorId: Record<string, AvailabilityRecord[]>;
 };
-
-function getDoctorAvatarUrl(doctor: DoctorRecord) {
-  const avatar = typeof doctor.userId === "object" && doctor.userId ? doctor.userId.avatar : undefined;
-  const trimmedAvatar = typeof avatar === "string" ? avatar.trim() : "";
-
-  if (!trimmedAvatar) {
-    return "";
-  }
-
-  if (
-    trimmedAvatar.startsWith("data:") ||
-    trimmedAvatar.startsWith("http://") ||
-    trimmedAvatar.startsWith("https://")
-  ) {
-    return trimmedAvatar;
-  }
-
-  return trimmedAvatar.startsWith("/") ? `${API_BASE_URL}${trimmedAvatar}` : `${API_BASE_URL}/${trimmedAvatar}`;
-}
 
 function getDoctorInitials(doctor: DoctorRecord) {
   const name = resolveDoctorName(doctor).trim();

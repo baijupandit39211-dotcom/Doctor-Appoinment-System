@@ -140,10 +140,16 @@ export async function doctorOverview(req: Request, res: Response, next: NextFunc
     }
 
     let doctorId = parseOptionalString(req.query.doctorId);
+    let profileStatus: string | undefined;
+    let isPublic: boolean | undefined;
+    let isAvailable: boolean | undefined;
 
     if (req.user.role === "doctor") {
       const doctor = await getDoctorProfileByUserId(req.user._id.toString());
       doctorId = doctor._id.toString();
+      profileStatus = doctor.profileStatus;
+      isPublic = doctor.isPublic;
+      isAvailable = doctor.isAvailable;
     }
 
     const baseFilters = doctorId ? { doctorId } : {};
@@ -154,6 +160,9 @@ export async function doctorOverview(req: Request, res: Response, next: NextFunc
       message: "Doctor overview fetched successfully",
       data: {
         doctorId: doctorId ?? null,
+        profileStatus: profileStatus ?? null,
+        isPublic: isPublic ?? null,
+        isAvailable: isAvailable ?? null,
         ...counts,
       },
     });

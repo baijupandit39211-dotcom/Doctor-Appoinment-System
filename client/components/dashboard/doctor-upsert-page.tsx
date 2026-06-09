@@ -143,7 +143,11 @@ function getDoctorBasePath(role?: AuthRole) {
   return role === "super_admin" ? "/superadmin" : "/admin";
 }
 
-function buildReturnHref(basePath: "/admin" | "/superadmin") {
+function buildReturnHref(basePath: "/admin" | "/superadmin", mode: DoctorUpsertMode) {
+  if (mode === "create" && basePath === "/superadmin") {
+    return `${basePath}?section=${encodeURIComponent("Doctor Approvals")}`;
+  }
+
   return `${basePath}?section=Doctors`;
 }
 
@@ -177,7 +181,7 @@ function buildDoctorFormState(doctor?: DoctorRecord | null): DoctorFormState {
   };
 }
 
-function buildDoctorSubmitPayload(form: DoctorFormState) {
+function buildDoctorSubmitPayload(form: DoctorFormState, mode: DoctorUpsertMode) {
   return {
     avatar: form.avatar.trim() || undefined,
     name: form.name.trim(),
@@ -190,7 +194,7 @@ function buildDoctorSubmitPayload(form: DoctorFormState) {
     experienceYears: Number(form.experienceYears || 0),
     consultationFee: Number(form.consultationFee || 0),
     bio: form.bio.trim(),
-    status: form.status,
+    status: mode === "create" ? "pending" : form.status,
   };
 }
 
@@ -289,7 +293,7 @@ export function DoctorUpsertPage({
     return options;
   }, [form.specialization]);
 
-  const returnHref = useMemo(() => buildReturnHref(basePath), [basePath]);
+  const returnHref = useMemo(() => buildReturnHref(basePath, mode), [basePath, mode]);
 
   async function handleAvatarFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -406,7 +410,7 @@ export function DoctorUpsertPage({
         throw new Error("Temporary password is required");
       }
 
-      const payload = buildDoctorSubmitPayload(form);
+      const payload = buildDoctorSubmitPayload(form, mode);
       const response = mode === "edit" && doctorId
         ? await requestJson<DoctorRecord>(`/api/doctors/${doctorId}`, {
             method: "PATCH",
@@ -755,7 +759,7 @@ export function DoctorUpsertPage({
                   className="h-12 w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 text-sm text-slate-950 outline-none transition focus:border-blue-500"
                 >
                   <option value="pending">Pending</option>
-                  <option value="active">Active</option>
+                  {mode === "edit" ? <option value="active">Active</option> : null}
                 </select>
               </label>
 
@@ -777,7 +781,7 @@ export function DoctorUpsertPage({
                 <p className="text-sm text-slate-500">
                   {mode === "edit"
                     ? "Updates refresh the doctor profile and keep the existing account linked."
-                    : "The doctor can log in immediately with the temporary password."}
+                    : "The doctor can log in after approval with the temporary password."}
                 </p>
               </div>
             </form>

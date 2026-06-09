@@ -3,17 +3,17 @@
 import Link from "next/link";
 import { useEffect, useState, type ComponentType } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CheckCircle2, EyeOff, PencilLine, Stethoscope, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, PencilLine, Stethoscope, XCircle } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { DashboardShell } from "./dashboard-shell";
 import { getCurrentUser, logoutUser, type AuthRole, type AuthUser } from "@/lib/auth";
-import { API_BASE_URL } from "@/lib/api";
 import { requestJson } from "@/lib/api-client";
 
 import {
   type AvailabilityRecord,
+  getDoctorAvatarUrl,
   getNextAvailabilityLabel,
   resolveClinicName,
   resolveDepartmentName,
@@ -80,23 +80,6 @@ const rolePathMap: Record<AuthRole, string> = {
   clinic_admin: "/admin",
   super_admin: "/superadmin",
 };
-
-function getDoctorAvatarUrl(doctor?: DoctorDetailRecord | null) {
-  if (!doctor || !doctor.userId || typeof doctor.userId === "string") {
-    return "";
-  }
-
-  const avatar = doctor.userId.avatar?.trim();
-  if (!avatar) {
-    return "";
-  }
-
-  if (avatar.startsWith("data:") || avatar.startsWith("http://") || avatar.startsWith("https://")) {
-    return avatar;
-  }
-
-  return avatar.startsWith("/") ? `${API_BASE_URL}${avatar}` : `${API_BASE_URL}/${avatar}`;
-}
 
 function getDoctorInitials(doctor?: DoctorDetailRecord | null) {
   const name = resolveDoctorName(doctor as never).trim();
@@ -305,8 +288,10 @@ export function DoctorManagementPage({
     router.push(`${basePath}/doctors/${doctorId}/edit`);
   }
 
-  const returnHref = `${basePath}?section=Doctors`;
   const statusMeta = doctorStatusMeta(doctor?.profileStatus, doctor?.isPublic);
+  const isPendingDoctor = doctor?.profileStatus === "pending";
+  const activeSectionLabel = isPendingDoctor ? "Doctor Approvals" : "Doctors";
+  const returnHref = `${basePath}?section=${encodeURIComponent(activeSectionLabel)}`;
   const avatarUrl = getDoctorAvatarUrl(doctor);
   const nextAvailability = availability.length > 0 ? getNextAvailabilityLabel(availability) : "";
 
@@ -398,7 +383,7 @@ export function DoctorManagementPage({
       nextSteps={[]}
       user={currentUser}
       onLogout={handleLogout}
-      activeNavLabel="Doctors"
+      activeNavLabel={activeSectionLabel}
     >
       <section className="bg-slate-50 px-6 py-6 text-slate-900 sm:px-8 lg:px-10">
         <div className="mx-auto max-w-[1600px]">
@@ -407,7 +392,7 @@ export function DoctorManagementPage({
               <div className="max-w-4xl">
                 <Link href={returnHref} className="inline-flex items-center gap-2 text-sm font-semibold text-blue-600 hover:text-blue-700">
                   <ArrowLeft className="size-4" />
-                  Back to doctors
+                  Back to {isPendingDoctor ? "approvals" : "doctors"}
                 </Link>
 
                 <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -434,12 +419,14 @@ export function DoctorManagementPage({
 
                 <h1 className="mt-4 text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">{resolveDoctorName(doctor as never)}</h1>
                 <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600 sm:text-base">
-                  {doctor.bio ?? "Review the live doctor profile, availability schedule, and approve or edit the profile here."}
+                  {isPendingDoctor
+                    ? doctor.bio ?? "Review the pending doctor profile, availability schedule, and approve or edit the profile here."
+                    : doctor.bio ?? "Review the live doctor profile and availability schedule here."}
                 </p>
               </div>
 
-              <div className="flex flex-wrap gap-3">
-                {doctor.profileStatus === "pending" ? (
+              {isPendingDoctor ? (
+                <div className="flex flex-wrap gap-3">
                   <button
                     type="button"
                     onClick={() => handleDoctorAction("approve")}
@@ -447,10 +434,8 @@ export function DoctorManagementPage({
                     className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-3 text-sm font-semibold !text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70"
                     style={{ color: "#ffffff" }}
                   >
-                      {isSavingAction ? "Updating..." : "Approve"}
+                    {isSavingAction ? "Updating..." : "Approve"}
                   </button>
-                ) : null}
-                {doctor.profileStatus === "pending" ? (
                   <button
                     type="button"
                     onClick={() => handleDoctorAction("reject")}
@@ -459,26 +444,20 @@ export function DoctorManagementPage({
                   >
                     Reject
                   </button>
-                ) : null}
-                {doctor.profileStatus === "approved" ? (
                   <button
                     type="button"
-                    onClick={() => handleDoctorAction("unpublish")}
-                    disabled={isSavingAction}
-                    className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-70"
+                    onClick={openEditPage}
+                    className="inline-flex items-center justify-center rounded-full border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
                   >
-                    Unpublish
+                    <PencilLine className="mr-2 size-4" />
+                    Edit
                   </button>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={openEditPage}
-                  className="inline-flex items-center justify-center rounded-full border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
-                >
-                  <PencilLine className="mr-2 size-4" />
-                  Edit
-                </button>
-              </div>
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                  Approval actions are available only for pending doctor profiles.
+                </div>
+              )}
             </div>
 
             {successMessage ? (
@@ -610,8 +589,8 @@ export function DoctorManagementPage({
                   </div>
                 </div>
 
-                <div className="flex flex-wrap gap-3">
-                  {doctor.profileStatus === "pending" ? (
+                {isPendingDoctor ? (
+                  <div className="flex flex-wrap gap-3">
                     <button
                       type="button"
                       onClick={() => handleDoctorAction("approve")}
@@ -622,8 +601,6 @@ export function DoctorManagementPage({
                       <CheckCircle2 className="mr-2 size-4" />
                       {isSavingAction ? "Updating..." : "Approve"}
                     </button>
-                  ) : null}
-                  {doctor.profileStatus === "pending" ? (
                     <button
                       type="button"
                       onClick={() => handleDoctorAction("reject")}
@@ -633,27 +610,20 @@ export function DoctorManagementPage({
                       <XCircle className="mr-2 size-4" />
                       Reject
                     </button>
-                  ) : null}
-                  {doctor.profileStatus === "approved" ? (
                     <button
                       type="button"
-                      onClick={() => handleDoctorAction("unpublish")}
-                      disabled={isSavingAction}
-                      className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-70"
+                      onClick={openEditPage}
+                      className="inline-flex items-center justify-center rounded-full border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
                     >
-                      <EyeOff className="mr-2 size-4" />
-                      Unpublish
+                      <PencilLine className="mr-2 size-4" />
+                      Edit
                     </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={openEditPage}
-                    className="inline-flex items-center justify-center rounded-full border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
-                  >
-                    <PencilLine className="mr-2 size-4" />
-                    Edit
-                  </button>
-                </div>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                    Approval actions are available only for pending doctor profiles.
+                  </div>
+                )}
               </div>
             </div>
           </div>

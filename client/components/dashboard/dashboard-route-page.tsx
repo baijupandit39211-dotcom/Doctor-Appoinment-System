@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
-import { BellRing } from "lucide-react";
+import { BellRing, Upload, X } from "lucide-react";
 
 import { DashboardShell } from "./dashboard-shell";
 import { getCurrentUser, logoutUser, type AuthRole, type AuthUser } from "@/lib/auth";
@@ -48,6 +48,8 @@ type DashboardContent = {
   reportStatusSummary?: { label: string; value: string; className: string }[];
   reportError?: string;
   doctorProfileId?: string;
+  doctorProfileStatus?: string;
+  doctorAccessAllowed?: boolean;
 };
 
 type SectionHeroCard = {
@@ -150,6 +152,7 @@ type AvailabilityRecord = {
 type DoctorCreationStatus = "pending" | "active";
 
 type DoctorCreationFormState = {
+  avatar: string;
   name: string;
   email: string;
   password: string;
@@ -171,6 +174,9 @@ type OverviewRecord = {
   cancelledAppointments?: number;
   noShowAppointments?: number;
   doctorId?: string;
+  profileStatus?: string | null;
+  isPublic?: boolean | null;
+  isAvailable?: boolean | null;
 };
 
 type DashboardRoutePageProps = {
@@ -281,6 +287,48 @@ function getDoctorAvatarSrc(doctor?: DoctorRecord) {
   }
 
   return avatar.startsWith("/") ? `${API_BASE_URL}${avatar}` : `${API_BASE_URL}/${avatar}`;
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+    reader.onerror = () => reject(new Error("Failed to read image file"));
+    reader.readAsDataURL(file);
+  });
+}
+
+const cloudinaryCloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME?.trim() ?? "";
+const cloudinaryUploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET?.trim() ?? "";
+
+async function uploadDoctorAvatar(file: File) {
+  if (!cloudinaryCloudName || !cloudinaryUploadPreset) {
+    return readFileAsDataUrl(file);
+  }
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("upload_preset", cloudinaryUploadPreset);
+  formData.append("folder", "docpulse/doctors");
+
+  const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudinaryCloudName}/image/upload`, {
+    method: "POST",
+    body: formData,
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | { secure_url?: string; error?: { message?: string } }
+    | null;
+
+  if (!response.ok) {
+    throw new Error(payload?.error?.message ?? "Failed to upload doctor photo");
+  }
+
+  if (!payload?.secure_url) {
+    throw new Error("Cloudinary upload did not return an image URL");
+  }
+
+  return payload.secure_url;
 }
 
 function formatDoctorFee(doctor?: DoctorRecord) {
@@ -642,13 +690,28 @@ async function loadPatientContent(): Promise<DashboardContent> {
 }
 
 async function loadDoctorContent(): Promise<DashboardContent> {
-  const [overviewResult, notificationsResult, appointmentsResult] = await Promise.allSettled([
-    requestJson<OverviewRecord>("/api/reports/doctor-overview"),
+  const overviewResponse = await requestJson<OverviewRecord>("/api/reports/doctor-overview");
+  const overview = overviewResponse.data;
+  const doctorProfileStatus = overview?.profileStatus ?? "";
+  if (doctorProfileStatus !== "approved") {
+    return {
+      stats: [],
+      highlights: [
+        "Your doctor profile is waiting for approval.",
+        "You will gain dashboard access after the admin team approves your account.",
+      ],
+      nextSteps: [],
+      doctorProfileId: overview?.doctorId ?? "",
+      doctorProfileStatus: doctorProfileStatus || undefined,
+      doctorAccessAllowed: false,
+    };
+  }
+
+  const [notificationsResult, appointmentsResult] = await Promise.allSettled([
     requestJson<unknown>("/api/notifications/me"),
     requestJson<AppointmentRecord[]>("/api/appointments/me"),
   ]);
 
-  const overview = overviewResult.status === "fulfilled" ? overviewResult.value.data : undefined;
   const unreadCount = notificationsResult.status === "fulfilled" ? notificationsResult.value.unreadCount ?? 0 : 0;
   const appointments = appointmentsResult.status === "fulfilled" ? appointmentsResult.value.data ?? [] : [];
   const appointmentsError =
@@ -702,6 +765,8 @@ async function loadDoctorContent(): Promise<DashboardContent> {
     availability,
     availabilityError,
     doctorProfileId: doctorId,
+    doctorProfileStatus: doctorProfileStatus || undefined,
+    doctorAccessAllowed: true,
     appointmentStatusSummary: [
       { label: "Pending", value: formatCount(pendingAppointments), className: "bg-amber-50 text-amber-700 border-amber-200" },
       { label: "Confirmed", value: formatCount(confirmedAppointments), className: "bg-sky-50 text-sky-700 border-sky-200" },
@@ -1019,6 +1084,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
   const [doctorCreationMessage, setDoctorCreationMessage] = useState("");
   const [departmentForm, setDepartmentForm] = useState({ name: "", description: "" });
   const [doctorCreationForm, setDoctorCreationForm] = useState<DoctorCreationFormState>({
+    avatar: "",
     name: "",
     email: "",
     password: "",
@@ -1082,6 +1148,11 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
 
         const roleContent = await loadDashboardContent(currentUser.role);
         if (!active) {
+          return;
+        }
+
+        if (currentUser.role === "doctor" && roleContent.doctorAccessAllowed === false) {
+          router.replace("/unauthorized");
           return;
         }
 
@@ -1201,6 +1272,16 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
           { title: `${rejectedDoctors} rejected`, text: "Profiles hidden from publication." },
         ],
       },
+      "Doctor Approvals": {
+        label: "Doctor Approvals",
+        title: "Pending doctor approvals",
+        subtitle: "Review doctor profiles waiting for approval before they go live.",
+        cards: [
+          { title: `${pendingDoctors} pending`, text: "Doctor profiles waiting for review." },
+          { title: "Approve or reject", text: "Open each pending profile to approve, reject, or edit it." },
+          { title: "All doctors stay separate", text: "Use the Doctors section for the full doctor list." },
+        ],
+      },
       Departments: {
         label: "Departments",
         title: "Department management",
@@ -1281,6 +1362,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
 
   function resetDoctorForm() {
     setDoctorCreationForm({
+      avatar: "",
       name: "",
       email: "",
       password: "",
@@ -1317,6 +1399,22 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
     resetDoctorForm();
   }
 
+  async function handleDoctorAvatarChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      const avatarUrl = await uploadDoctorAvatar(file);
+      setDoctorCreationForm((current) => ({ ...current, avatar: avatarUrl }));
+    } catch (uploadError) {
+      setDoctorCreationError(uploadError instanceof Error ? uploadError.message : "Failed to load image");
+    } finally {
+      event.target.value = "";
+    }
+  }
+
   async function handleDoctorCreateSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -1334,6 +1432,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
       }
 
       const payload = {
+        avatar: doctorCreationForm.avatar.trim() || undefined,
         name: doctorCreationForm.name.trim(),
         email: doctorCreationForm.email.trim(),
         ...(doctorCreationForm.password.trim() ? { password: doctorCreationForm.password.trim() } : {}),
@@ -1342,7 +1441,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
         experienceYears: Number(doctorCreationForm.experienceYears || 0),
         consultationFee: Number(doctorCreationForm.consultationFee || 0),
         bio: doctorCreationForm.bio.trim(),
-        status: doctorCreationForm.status,
+        status: editingDoctorId ? doctorCreationForm.status : "pending",
       };
 
       if (editingDoctorId) {
@@ -1357,6 +1456,9 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
           body: JSON.stringify(payload),
         });
         setDoctorCreationMessage("Doctor account created successfully.");
+        if (user.role === "super_admin") {
+          setActiveSection("Doctor Approvals");
+        }
       }
 
       closeDoctorForm();
@@ -2588,7 +2690,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                           {editingDoctorId ? "Update doctor account and profile" : "Add a new doctor account for the clinic"}
                         </h4>
                         <p className="mt-2 text-sm leading-6 text-slate-600">
-                          Active doctors are approved immediately. Pending doctors stay hidden until approved.
+                          Pending doctors stay hidden until reviewed and approved.
                         </p>
                       </div>
                       <button
@@ -2601,6 +2703,61 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                     </div>
 
                     <form onSubmit={handleDoctorCreateSubmit} className="mt-5 grid gap-4 md:grid-cols-2">
+                      <div className="md:col-span-2">
+                        <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-5">
+                          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="flex items-center gap-4">
+                              <div className="grid size-20 shrink-0 place-items-center overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 text-slate-400 shadow-sm">
+                                {doctorCreationForm.avatar.trim() ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={doctorCreationForm.avatar.trim()}
+                                    alt="Doctor profile preview"
+                                    className="size-full object-cover"
+                                  />
+                                ) : (
+                                  <Upload className="size-7" />
+                                )}
+                              </div>
+                              <div>
+                                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">
+                                  Doctor profile picture
+                                </p>
+                                <h4 className="mt-1 text-base font-semibold tracking-tight text-slate-950">
+                                  Upload a doctor photo
+                                </h4>
+                                <p className="mt-1 text-sm text-slate-600">
+                                  Add a clear headshot so the doctor card and detail page can render the profile image.
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-3">
+                              <label className="inline-flex cursor-pointer items-center justify-center rounded-full bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700">
+                                <Upload className="mr-2 size-4" />
+                                {doctorCreationForm.avatar.trim() ? "Replace photo" : "Upload photo"}
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  onChange={handleDoctorAvatarChange}
+                                />
+                              </label>
+                              {doctorCreationForm.avatar.trim() ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setDoctorCreationForm((current) => ({ ...current, avatar: "" }))}
+                                  className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                                >
+                                  <X className="mr-2 size-4" />
+                                  Remove
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
                       <label className="space-y-2">
                         <span className="text-sm font-medium text-slate-700">Full name</span>
                         <input
@@ -2730,7 +2887,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                           className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
                         >
                           <option value="pending">Pending</option>
-                          <option value="active">Active</option>
+                          {editingDoctorId ? <option value="active">Active</option> : null}
                         </select>
                       </label>
 
@@ -2749,7 +2906,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                               ? "Save changes"
                               : "Create doctor"}
                         </button>
-                        <p className="text-sm text-slate-500">The doctor can log in immediately with the temporary password.</p>
+                        <p className="text-sm text-slate-500">The doctor can log in after approval with the temporary password.</p>
                       </div>
                     </form>
                   </div>
@@ -2858,6 +3015,113 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                   </div>
                 )}
 
+              </div>
+            </div>
+          </section>
+        ) : activeSection === "Doctor Approvals" ? (
+          <section className="bg-slate-50 px-6 pb-10 text-slate-900">
+            <div className="mx-auto max-w-[1600px]">
+              <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Doctor approvals</p>
+                    <h2 className="mt-2 text-2xl font-semibold tracking-tight">Pending doctor approvals</h2>
+                    <p className="mt-2 text-sm leading-6 text-slate-600">
+                      Review doctor profiles waiting for approval before they become public.
+                    </p>
+                    <p className="mt-2 text-sm font-medium text-slate-500">Click a doctor card to view full details.</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <p className="text-sm text-slate-500">
+                      {formatCount(content.doctors?.filter((doctor) => doctor.profileStatus === "pending").length ?? 0)} pending
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setActiveSection("Doctors")}
+                      className="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold !text-white transition hover:bg-blue-700 hover:!text-white"
+                      style={{ color: "#ffffff" }}
+                    >
+                      View all doctors
+                    </button>
+                  </div>
+                </div>
+
+                {content.doctors === undefined ? (
+                  <div className="mt-5 rounded-2xl border border-slate-200 bg-white px-4 py-6 text-center">
+                    <div className="mx-auto size-10 animate-spin rounded-full border-4 border-slate-200 border-t-slate-950" />
+                    <p className="mt-3 text-sm text-slate-600">Loading pending doctors...</p>
+                  </div>
+                ) : content.doctors.filter((doctor) => doctor.profileStatus === "pending").length === 0 ? (
+                  <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-8 text-center">
+                    <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">No pending doctors</p>
+                    <p className="mt-2 text-sm text-slate-600">All doctor profiles have already been reviewed.</p>
+                  </div>
+                ) : (
+                  <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    {content.doctors
+                      .filter((doctor) => doctor.profileStatus === "pending")
+                      .map((doctor) => {
+                        const doctorId = doctor._id ?? "";
+                        const avatarSrc = getDoctorAvatarSrc(doctor);
+                        const statusMeta = doctorStatusMeta(doctor.profileStatus, doctor.isPublic);
+                        const doctorsBasePath = user?.role === "super_admin" ? "/superadmin" : "/admin";
+                        const doctorHref = doctorId ? `${doctorsBasePath}/doctors/${doctorId}` : doctorsBasePath;
+
+                        return (
+                          <Link
+                            key={doctorId || `${typeof doctor.userId === "string" ? doctor.userId : doctor.userId?.email}-${doctor.specialization}`}
+                            href={doctorHref}
+                            className="group block h-full cursor-pointer"
+                          >
+                            <article className="h-full overflow-hidden rounded-3xl border border-white bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] transition group-hover:-translate-y-0.5 group-hover:shadow-[0_18px_42px_rgba(15,23,42,0.08)]">
+                              <div className="bg-gradient-to-br from-slate-50 via-white to-sky-50 p-2.5">
+                                <div className="h-[6.5rem] overflow-hidden rounded-[1rem] bg-white sm:h-28">
+                                  {avatarSrc ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img
+                                      src={avatarSrc}
+                                      alt={formatDoctorName(doctor)}
+                                      className="h-full w-full object-contain object-center p-0.5"
+                                    />
+                                  ) : (
+                                    <div className="flex h-full items-center justify-center">
+                                      <div className="grid size-[3.75rem] place-items-center rounded-[1rem] bg-gradient-to-br from-blue-600 to-cyan-500 text-lg font-semibold text-white shadow-[0_12px_28px_rgba(37,99,235,0.2)]">
+                                        {getDoctorInitials(doctor)}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="space-y-3 p-5">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <h3 className="truncate text-lg font-semibold tracking-tight text-slate-950">
+                                      {formatDoctorName(doctor)}
+                                    </h3>
+                                    <p className="mt-1 text-sm text-slate-500">{doctor.specialization ?? "General Practice"}</p>
+                                  </div>
+                                  <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${statusMeta.className}`}>
+                                    {doctorCardStatusLabel(doctor.profileStatus)}
+                                  </span>
+                                </div>
+
+                                <div className="flex flex-wrap gap-2">
+                                  <span
+                                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                                      doctor.isAvailable ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"
+                                    }`}
+                                  >
+                                    {doctor.isAvailable ? "Available" : "Unavailable"}
+                                  </span>
+                                </div>
+                              </div>
+                            </article>
+                          </Link>
+                        );
+                      })}
+                  </div>
+                )}
               </div>
             </div>
           </section>
@@ -3203,7 +3467,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                           {editingDoctorId ? "Update doctor account and profile" : "Add a new doctor account for the clinic"}
                         </h4>
                         <p className="mt-2 text-sm leading-6 text-slate-600">
-                          Active doctors are approved immediately. Pending doctors stay hidden until approved.
+                          Pending doctors stay hidden until reviewed and approved.
                         </p>
                       </div>
                       <button
@@ -3216,6 +3480,61 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                     </div>
 
                     <form onSubmit={handleDoctorCreateSubmit} className="mt-5 grid gap-4 md:grid-cols-2">
+                      <div className="md:col-span-2">
+                        <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-5">
+                          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="flex items-center gap-4">
+                              <div className="grid size-20 shrink-0 place-items-center overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 text-slate-400 shadow-sm">
+                                {doctorCreationForm.avatar.trim() ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={doctorCreationForm.avatar.trim()}
+                                    alt="Doctor profile preview"
+                                    className="size-full object-cover"
+                                  />
+                                ) : (
+                                  <Upload className="size-7" />
+                                )}
+                              </div>
+                              <div>
+                                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">
+                                  Doctor profile picture
+                                </p>
+                                <h4 className="mt-1 text-base font-semibold tracking-tight text-slate-950">
+                                  Upload a doctor photo
+                                </h4>
+                                <p className="mt-1 text-sm text-slate-600">
+                                  Add a clear headshot so the doctor card and detail page can render the profile image.
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-3">
+                              <label className="inline-flex cursor-pointer items-center justify-center rounded-full bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700">
+                                <Upload className="mr-2 size-4" />
+                                {doctorCreationForm.avatar.trim() ? "Replace photo" : "Upload photo"}
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  onChange={handleDoctorAvatarChange}
+                                />
+                              </label>
+                              {doctorCreationForm.avatar.trim() ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setDoctorCreationForm((current) => ({ ...current, avatar: "" }))}
+                                  className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                                >
+                                  <X className="mr-2 size-4" />
+                                  Remove
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
                       <label className="space-y-2">
                         <span className="text-sm font-medium text-slate-700">Full name</span>
                         <input
@@ -3345,7 +3664,6 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                           className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
                         >
                           <option value="pending">Pending</option>
-                          <option value="active">Active</option>
                         </select>
                       </label>
 
@@ -3364,7 +3682,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                               ? "Save changes"
                               : "Create doctor"}
                         </button>
-                        <p className="text-sm text-slate-500">The doctor can log in immediately with the temporary password.</p>
+                        <p className="text-sm text-slate-500">The doctor can log in after approval with the temporary password.</p>
                       </div>
                     </form>
                   </div>

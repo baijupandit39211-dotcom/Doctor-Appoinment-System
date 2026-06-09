@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { ChevronRight, ShieldCheck, Stethoscope } from "lucide-react";
 
 import { NotificationBell } from "../notifications/notification-bell";
@@ -66,6 +67,8 @@ export function DashboardShell({
   isLoggingOut,
   children,
 }: DashboardShellProps) {
+  const pathname = usePathname();
+
   return (
     <main className="bg-slate-50 text-slate-900">
       <div className="mx-auto grid max-w-[1600px] grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)]">
@@ -85,11 +88,12 @@ export function DashboardShell({
               <nav className="mt-8 space-y-2">
                 {navItems.map((item) => {
                   const Icon = item.icon;
-                  const isActive = (activeNavLabel ?? navItems[0]?.label) === item.label;
-                  const itemClassName = `flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-medium transition ${
+                  const isPathActive = item.href ? pathname === item.href : false;
+                  const isActive = (activeNavLabel ?? navItems[0]?.label) === item.label || isPathActive;
+                  const itemClassName = `flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-normal no-underline transition ${
                     isActive
-                      ? "bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-[0_12px_28px_rgba(2,6,23,0.16)]"
-                      : "text-slate-600 hover:bg-slate-100"
+                      ? "bg-gradient-to-r from-blue-600 to-cyan-500 !text-white font-semibold shadow-[0_12px_28px_rgba(2,6,23,0.16)]"
+                      : "!text-slate-600 hover:bg-slate-100 hover:!text-slate-900"
                   }`;
 
                   if (item.href) {

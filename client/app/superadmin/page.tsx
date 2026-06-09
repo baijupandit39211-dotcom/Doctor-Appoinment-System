@@ -4,6 +4,7 @@ import { DashboardRoutePage } from "@/components/dashboard/dashboard-route-page"
 import {
   BarChart3,
   CalendarDays,
+  ClipboardCheck,
   LayoutDashboard,
   Layers3,
   Stethoscope,
@@ -23,6 +24,7 @@ export default function SuperAdminPage() {
         navItems: [
           { label: "Overview", icon: LayoutDashboard },
           { label: "Doctors", icon: Stethoscope },
+          { label: "Doctor Approvals", icon: ClipboardCheck },
           { label: "Add Doctor", icon: UserPlus, href: "/superadmin/doctors/new" },
           { label: "Departments", icon: Layers3 },
           { label: "Appointments", icon: CalendarDays },

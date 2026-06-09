@@ -1,6 +1,7 @@
 "use client";
 
 import type { AuthUser } from "@/lib/auth";
+import { API_BASE_URL } from "@/lib/api";
 import { requestJson } from "@/lib/api-client";
 
 export type PopulatedRef<T> = string | (T & { _id?: string; id?: string }) | null | undefined;
@@ -156,6 +157,19 @@ export function getNextAvailabilityLabel(slots: AvailabilityRecord[]) {
   }
 
   return `Next: ${formatScheduleLabel(firstSlot)}`;
+}
+
+export function getDoctorAvatarUrl(doctor?: DoctorRecord | null) {
+  const avatar = typeof doctor?.userId === "object" && doctor.userId ? doctor.userId.avatar?.trim() : "";
+  if (!avatar) {
+    return "";
+  }
+
+  if (avatar.startsWith("data:") || avatar.startsWith("http://") || avatar.startsWith("https://")) {
+    return avatar;
+  }
+
+  return avatar.startsWith("/") ? `${API_BASE_URL}${avatar}` : `${API_BASE_URL}/${avatar}`;
 }
 
 export async function loadCurrentUserSafe() {

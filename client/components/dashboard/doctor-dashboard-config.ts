@@ -2,6 +2,7 @@ import {
   BarChart3,
   Building2,
   CalendarDays,
+  ClipboardCheck,
   Layers3,
   LayoutDashboard,
   Stethoscope,
@@ -30,6 +31,7 @@ export function getDoctorDashboardConfig(role: "clinic_admin" | "super_admin"): 
       navItems: [
         { label: "Overview", icon: LayoutDashboard },
         { label: "Doctors", icon: Stethoscope },
+        { label: "Doctor Approvals", icon: ClipboardCheck },
         { label: "Add Doctor", icon: UserPlus, href: "/superadmin/doctors/new" },
         { label: "Departments", icon: Layers3 },
         { label: "Appointments", icon: CalendarDays },

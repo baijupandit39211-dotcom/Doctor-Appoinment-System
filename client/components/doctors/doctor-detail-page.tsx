@@ -17,6 +17,7 @@ import {
   type DoctorRecord,
   formatCurrency,
   formatExperience,
+  getDoctorAvatarUrl,
   getNextAvailabilityLabel,
   formatScheduleLabel,
   loadCurrentUserSafe,
@@ -90,6 +91,7 @@ export function DoctorDetailPage({ doctorId }: DoctorDetailPageProps) {
 
   const isPatientAccount = currentUser?.role === "patient";
   const returnToDoctorsHref = searchParams.toString() ? `/doctors?${searchParams.toString()}` : "/doctors";
+  const avatarUrl = getDoctorAvatarUrl(doctor);
 
   async function handleBookingSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -230,6 +232,44 @@ export function DoctorDetailPage({ doctorId }: DoctorDetailPageProps) {
                 {doctor.bio ??
                   "Review the live doctor profile, availability schedule, and book a slot directly from this page."}
               </p>
+
+              <div className="mt-6 overflow-hidden rounded-[2rem] border border-slate-200 bg-slate-50 shadow-sm">
+                <div className="grid gap-0 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
+                  <div className="flex min-h-[18rem] items-center justify-center bg-gradient-to-br from-slate-50 via-white to-sky-50 p-6">
+                    {avatarUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={avatarUrl}
+                        alt={resolveDoctorName(doctor)}
+                        className="max-h-[16rem] w-full object-contain object-center"
+                      />
+                    ) : (
+                      <div className="grid size-32 place-items-center rounded-[2rem] bg-gradient-to-br from-blue-600 to-cyan-500 text-5xl font-semibold text-white shadow-[0_12px_28px_rgba(37,99,235,0.2)]">
+                        {resolveDoctorName(doctor)
+                          .split(/\s+/)
+                          .map((part) => part[0])
+                          .slice(0, 2)
+                          .join("")
+                          .toUpperCase()}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col justify-center gap-4 p-6">
+                    <div className="max-w-xl">
+                      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Doctor photo</p>
+                      <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
+                        {avatarUrl ? "Uploaded doctor image" : "No uploaded photo yet"}
+                      </h2>
+                      <p className="mt-3 text-sm leading-6 text-slate-600">
+                        {avatarUrl
+                          ? "This area shows the uploaded doctor photo when one has been saved to the record."
+                          : "This doctor record does not currently have a photo, so initials are shown instead."}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
 
               <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
