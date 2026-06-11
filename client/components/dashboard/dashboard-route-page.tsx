@@ -2479,7 +2479,106 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
         <section className="bg-slate-50 px-6 pb-10 text-slate-900">
           <div className="mx-auto max-w-[1600px]">
             <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-              {activeSection === "Doctors" ? (
+              {activeSection === "Overview" ? (
+                <>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Overview</p>
+                      <h2 className="mt-2 text-2xl font-semibold tracking-tight">Your patient dashboard</h2>
+                      <p className="mt-2 text-sm leading-6 text-slate-600">
+                        A quick summary of your appointments, doctors, notifications, and profile status.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-3">
+                      <Link
+                        href="/doctors"
+                        className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                      >
+                        Find doctors
+                      </Link>
+                      <Link
+                        href="/patient?section=Appointments"
+                        className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700"
+                        style={{ color: "#ffffff" }}
+                      >
+                        View appointments
+                      </Link>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    {content.stats.map((stat) => (
+                      <article
+                        key={stat.label}
+                        className="rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="text-sm font-medium text-slate-600">{stat.label}</div>
+                          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Live</span>
+                        </div>
+                        <div className="mt-4 text-3xl font-semibold tracking-tight text-slate-950">{stat.value}</div>
+                        <p className="mt-3 text-sm leading-6 text-slate-600">{stat.detail}</p>
+                      </article>
+                    ))}
+                  </div>
+
+                  <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+                    <div className="rounded-3xl border border-slate-200 p-6">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">Recent activity</p>
+                          <p className="mt-1 text-sm text-slate-500">The latest updates in your account.</p>
+                        </div>
+                        <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                          Updated now
+                        </div>
+                      </div>
+
+                      <div className="mt-6 space-y-3">
+                        {content.highlights.map((item) => (
+                          <div key={item} className="flex items-start gap-3 rounded-2xl bg-slate-50 p-4">
+                            <div className="mt-0.5 grid size-8 place-items-center rounded-full bg-blue-50 text-blue-600">
+                              <BellRing className="size-4" />
+                            </div>
+                            <p className="text-sm leading-6 text-slate-700">{item}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-3xl border border-slate-200 p-6">
+                      <p className="text-sm font-semibold text-slate-900">Quick actions</p>
+                      <p className="mt-1 text-sm text-slate-500">Jump straight to the most-used patient areas.</p>
+                      <div className="mt-6 grid gap-3">
+                        <Link
+                          href="/patient?section=Doctors"
+                          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+                        >
+                          Doctors
+                        </Link>
+                        <Link
+                          href="/patient?section=Appointments"
+                          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+                        >
+                          Appointments
+                        </Link>
+                        <Link
+                          href="/patient?section=Notifications"
+                          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+                        >
+                          Notifications
+                        </Link>
+                        <Link
+                          href="/patient?section=Profile"
+                          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+                        >
+                          Profile
+                        </Link>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : activeSection === "Doctors" ? (
                 <>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                     <div>
@@ -3269,7 +3368,110 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
           </div>
         </section>
       ) : user.role === "doctor" ? (
-        activeSection === "Availability" ? (
+        activeSection === "Overview" ? (
+          <section className="bg-slate-50 px-6 pb-10 text-slate-900">
+            <div className="mx-auto max-w-[1600px]">
+              <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Overview</p>
+                    <h2 className="mt-2 text-2xl font-semibold tracking-tight">Your doctor dashboard</h2>
+                    <p className="mt-2 text-sm leading-6 text-slate-600">
+                      Quick visibility into your appointment load, availability, and account activity.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-3">
+                    <Link
+                      href="/doctor?section=Appointments"
+                      className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                    >
+                      View appointments
+                    </Link>
+                    <Link
+                      href="/doctor?section=Availability"
+                      className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700"
+                      style={{ color: "#ffffff" }}
+                    >
+                      Manage availability
+                    </Link>
+                  </div>
+                </div>
+
+                <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                  {content.stats.map((stat) => (
+                    <article
+                      key={stat.label}
+                      className="rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="text-sm font-medium text-slate-600">{stat.label}</div>
+                        <span className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Live</span>
+                      </div>
+                      <div className="mt-4 text-3xl font-semibold tracking-tight text-slate-950">{stat.value}</div>
+                      <p className="mt-3 text-sm leading-6 text-slate-600">{stat.detail}</p>
+                    </article>
+                  ))}
+                </div>
+
+                <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+                  <div className="rounded-3xl border border-slate-200 p-6">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">Recent activity</p>
+                        <p className="mt-1 text-sm text-slate-500">The latest appointment and account updates.</p>
+                      </div>
+                      <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                        Updated now
+                      </div>
+                    </div>
+
+                    <div className="mt-6 space-y-3">
+                      {content.highlights.map((item) => (
+                        <div key={item} className="flex items-start gap-3 rounded-2xl bg-slate-50 p-4">
+                          <div className="mt-0.5 grid size-8 place-items-center rounded-full bg-blue-50 text-blue-600">
+                            <BellRing className="size-4" />
+                          </div>
+                          <p className="text-sm leading-6 text-slate-700">{item}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-3xl border border-slate-200 p-6">
+                    <p className="text-sm font-semibold text-slate-900">Quick actions</p>
+                    <p className="mt-1 text-sm text-slate-500">Jump straight to the most-used doctor areas.</p>
+                    <div className="mt-6 grid gap-3">
+                      <Link
+                        href="/doctor?section=Appointments"
+                        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+                      >
+                        Appointments
+                      </Link>
+                      <Link
+                        href="/doctor?section=Availability"
+                        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+                      >
+                        Availability
+                      </Link>
+                      <Link
+                        href="/doctor?section=Patients"
+                        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+                      >
+                        Patients
+                      </Link>
+                      <Link
+                        href="/doctor"
+                        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+                      >
+                        Dashboard
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        ) : activeSection === "Availability" ? (
           <section className="bg-slate-50 px-6 pb-10 text-slate-900">
             <div className="mx-auto max-w-[1600px]">
                 <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
