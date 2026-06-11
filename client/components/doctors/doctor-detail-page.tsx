@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { ArrowRight, CalendarDays, HeartPulse, MapPin, ShieldCheck, Stethoscope } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -37,7 +36,6 @@ type AppointmentFormState = {
 };
 
 export function DoctorDetailPage({ doctorId }: DoctorDetailPageProps) {
-  const searchParams = useSearchParams();
   const [doctor, setDoctor] = useState<DoctorRecord | null>(null);
   const [availability, setAvailability] = useState<AvailabilityRecord[]>([]);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
@@ -90,7 +88,7 @@ export function DoctorDetailPage({ doctorId }: DoctorDetailPageProps) {
   }, [doctorId]);
 
   const isPatientAccount = currentUser?.role === "patient";
-  const returnToDoctorsHref = searchParams.toString() ? `/doctors?${searchParams.toString()}` : "/doctors";
+  const returnToDoctorsHref = currentUser?.role === "patient" ? "/patient?section=Doctors" : "/doctors";
   const avatarUrl = getDoctorAvatarUrl(doctor);
 
   async function handleBookingSubmit(event: React.FormEvent<HTMLFormElement>) {

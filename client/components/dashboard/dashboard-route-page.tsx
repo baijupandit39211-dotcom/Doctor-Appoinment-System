@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
-import { BellRing, Upload, X } from "lucide-react";
+import { BellRing, Clock3, Upload, X } from "lucide-react";
 
 import { DashboardShell } from "./dashboard-shell";
 import { getCurrentUser, logoutUser, type AuthRole, type AuthUser } from "@/lib/auth";
@@ -40,10 +40,15 @@ type DashboardContent = {
   departments?: DepartmentRecord[];
   appointments?: AppointmentRecord[];
   availability?: AvailabilityRecord[];
+  notifications?: NotificationRecord[];
+  patientProfile?: PatientRecord;
   doctorsError?: string;
   departmentsError?: string;
   appointmentsError?: string;
   availabilityError?: string;
+  notificationsError?: string;
+  patientProfileError?: string;
+  unreadCount?: number;
   appointmentStatusSummary?: { label: string; value: string; className: string }[];
   reportStatusSummary?: { label: string; value: string; className: string }[];
   reportError?: string;
@@ -85,6 +90,15 @@ type AppointmentRecord = {
   } | string;
 };
 
+type NotificationRecord = {
+  _id?: string;
+  title?: string;
+  message?: string;
+  type?: string;
+  isRead?: boolean;
+  createdAt?: string;
+};
+
 type DoctorRecord = {
   _id?: string;
   specialization?: string;
@@ -113,6 +127,23 @@ type DoctorRecord = {
       _id?: string;
       name?: string;
     }
+    | string;
+};
+
+type PatientRecord = {
+  _id?: string;
+  dateOfBirth?: string;
+  gender?: "male" | "female" | "other" | string;
+  address?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  userId?:
+    | {
+        name?: string;
+        email?: string;
+        phone?: string;
+        avatar?: string;
+      }
     | string;
 };
 
@@ -289,6 +320,94 @@ function getDoctorAvatarSrc(doctor?: DoctorRecord) {
   return avatar.startsWith("/") ? `${API_BASE_URL}${avatar}` : `${API_BASE_URL}/${avatar}`;
 }
 
+function formatPatientName(patient?: PatientRecord) {
+  if (!patient) {
+    return "Patient";
+  }
+
+  if (typeof patient.userId === "string") {
+    return "Patient profile";
+  }
+
+  return patient.userId?.name ?? "Patient";
+}
+
+function getPatientAvatarSrc(patient?: PatientRecord) {
+  if (!patient || !patient.userId || typeof patient.userId === "string") {
+    return "";
+  }
+
+  const avatar = patient.userId.avatar?.trim();
+  if (!avatar) {
+    return "";
+  }
+
+  if (avatar.startsWith("data:") || avatar.startsWith("http://") || avatar.startsWith("https://")) {
+    return avatar;
+  }
+
+  return avatar.startsWith("/") ? `${API_BASE_URL}${avatar}` : `${API_BASE_URL}/${avatar}`;
+}
+
+function getPatientInitials(patient?: PatientRecord) {
+  const name = formatPatientName(patient).trim();
+
+  if (!name) {
+    return "P";
+  }
+
+  return name
+    .split(/\s+/)
+    .map((part) => part[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+}
+
+function formatDateOfBirth(value?: string) {
+  if (!value) {
+    return "Not provided";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  }).format(date);
+}
+
+function calculateAge(value?: string) {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const ageDate = new Date(Date.now() - date.getTime());
+  return Math.abs(ageDate.getUTCFullYear() - 1970);
+}
+
+function formatDateForInput(value?: string) {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return date.toISOString().slice(0, 10);
+}
+
 function loadImageFromFile(file: File) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const objectUrl = URL.createObjectURL(file);
@@ -412,6 +531,79 @@ function formatAppointmentPatient(patient?: AppointmentRecord["patientId"]) {
   }
 
   return patient.userId?.name ?? "Patient details unavailable";
+}
+
+function sortNotifications(notifications: NotificationRecord[]) {
+  return [...notifications].sort((left, right) => {
+    const leftTime = left.createdAt ? new Date(left.createdAt).getTime() : 0;
+    const rightTime = right.createdAt ? new Date(right.createdAt).getTime() : 0;
+    return rightTime - leftTime;
+  });
+}
+
+function formatRelativeTime(value?: string) {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const diffMs = Date.now() - date.getTime();
+  const diffMinutes = Math.max(Math.floor(diffMs / 60000), 0);
+
+  if (diffMinutes < 1) {
+    return "Just now";
+  }
+  if (diffMinutes < 60) {
+    return `${diffMinutes}m ago`;
+  }
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) {
+    return `${diffHours}h ago`;
+  }
+
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d ago`;
+}
+
+function getNotificationTypeLabel(type?: string) {
+  const normalizedType = type?.trim().replace(/[_-]+/g, " ").trim();
+  if (!normalizedType) {
+    return "Update";
+  }
+
+  return normalizedType
+    .split(/\s+/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function getNotificationTypeClassName(type?: string) {
+  const normalizedType = type?.trim().toLowerCase();
+
+  switch (normalizedType) {
+    case "appointment":
+    case "appointments":
+      return "border-sky-200 bg-sky-50 text-sky-700";
+    case "approval":
+    case "doctor_approval":
+    case "doctor approval":
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    case "system":
+    case "info":
+      return "border-slate-200 bg-slate-50 text-slate-700";
+    case "warning":
+      return "border-amber-200 bg-amber-50 text-amber-700";
+    case "urgent":
+    case "alert":
+      return "border-rose-200 bg-rose-50 text-rose-700";
+    default:
+      return "border-slate-200 bg-slate-50 text-slate-700";
+  }
 }
 
 function appointmentStatusMeta(status?: string) {
@@ -700,10 +892,11 @@ function SectionHero({
 }
 
 async function loadPatientContent(): Promise<DashboardContent> {
-  const [appointmentsResult, notificationsResult, doctorsResult] = await Promise.allSettled([
+  const [appointmentsResult, notificationsResult, doctorsResult, patientResult] = await Promise.allSettled([
     requestJson<AppointmentRecord[]>("/api/appointments/me"),
-    requestJson<unknown>("/api/notifications/me"),
+    requestJson<NotificationRecord[]>("/api/notifications/me"),
     requestJson<DoctorRecord[]>("/api/doctors"),
+    requestJson<PatientRecord>("/api/patients/me"),
   ]);
 
   const appointments = appointmentsResult.status === "fulfilled" ? appointmentsResult.value.data ?? [] : [];
@@ -713,7 +906,19 @@ async function loadPatientContent(): Promise<DashboardContent> {
         ? appointmentsResult.reason.message
         : "Failed to load appointments"
       : "";
-  const unreadCount = notificationsResult.status === "fulfilled" ? notificationsResult.value.unreadCount ?? 0 : 0;
+  const notificationsResponse: ApiListResponse<NotificationRecord[]> | null =
+    notificationsResult.status === "fulfilled" ? notificationsResult.value : null;
+  const notifications: NotificationRecord[] = notificationsResponse?.data ?? [];
+  const notificationsError =
+    notificationsResult.status === "rejected"
+      ? notificationsResult.reason instanceof Error
+        ? notificationsResult.reason.message
+        : "Failed to load notifications"
+      : "";
+  const unreadCount =
+    notificationsResponse
+      ? notificationsResponse.unreadCount ?? notifications.filter((notification) => !notification.isRead).length
+      : 0;
   const doctorCount = doctorsResult.status === "fulfilled" ? doctorsResult.value.data?.length ?? 0 : 0;
   const doctors = doctorsResult.status === "fulfilled" ? doctorsResult.value.data ?? [] : [];
   const doctorsError =
@@ -721,6 +926,14 @@ async function loadPatientContent(): Promise<DashboardContent> {
       ? doctorsResult.reason instanceof Error
         ? doctorsResult.reason.message
         : "Failed to load doctors"
+      : "";
+  const patientProfile =
+    patientResult.status === "fulfilled" ? patientResult.value.data ?? undefined : undefined;
+  const patientProfileError =
+    patientResult.status === "rejected"
+      ? patientResult.reason instanceof Error
+        ? patientResult.reason.message
+        : "Failed to load profile"
       : "";
   const availabilityEntries = await Promise.allSettled(
     doctors
@@ -770,6 +983,11 @@ async function loadPatientContent(): Promise<DashboardContent> {
     doctors,
     doctorsError,
     availabilityByDoctorId,
+    notifications: sortNotifications(notifications),
+    notificationsError,
+    patientProfile,
+    patientProfileError,
+    unreadCount,
     appointmentStatusSummary: [
       { label: "Pending", value: formatCount(pendingAppointments), className: "bg-amber-50 text-amber-700 border-amber-200" },
       { label: "Confirmed", value: formatCount(confirmedAppointments), className: "bg-sky-50 text-sky-700 border-sky-200" },
@@ -1172,7 +1390,16 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
   const [editingDoctorId, setEditingDoctorId] = useState<string | null>(null);
   const [isDoctorFormOpen, setIsDoctorFormOpen] = useState(false);
   const [availabilityMessage, setAvailabilityMessage] = useState("");
+  const [notificationsMessage, setNotificationsMessage] = useState("");
   const [doctorCreationMessage, setDoctorCreationMessage] = useState("");
+  const [patientProfileMessage, setPatientProfileMessage] = useState("");
+  const [notificationsError, setNotificationsError] = useState("");
+  const [patientProfileError, setPatientProfileError] = useState("");
+  const [busyNotificationId, setBusyNotificationId] = useState<string | null>(null);
+  const [isMarkingAllNotifications, setIsMarkingAllNotifications] = useState(false);
+  const [isEditingPatientProfile, setIsEditingPatientProfile] = useState(false);
+  const [isSavingPatientProfile, setIsSavingPatientProfile] = useState(false);
+  const [patientNotificationFilter, setPatientNotificationFilter] = useState<"all" | "unread" | "read">("all");
   const [departmentForm, setDepartmentForm] = useState({ name: "", description: "" });
   const [doctorCreationForm, setDoctorCreationForm] = useState<DoctorCreationFormState>({
     avatar: "",
@@ -1210,6 +1437,14 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
   const [departmentsError, setDepartmentsError] = useState("");
   const [doctorCreationError, setDoctorCreationError] = useState("");
   const [error, setError] = useState("");
+  const [patientProfileForm, setPatientProfileForm] = useState({
+    avatar: "",
+    name: "",
+    phone: "",
+    gender: "",
+    dateOfBirth: "",
+    address: "",
+  });
 
   useEffect(() => {
     let active = true;
@@ -1284,6 +1519,26 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
     const initialSection = sectionNavItems.some((item) => item.label === sectionParam) ? sectionParam : defaultSection;
     setActiveSection(initialSection);
   }, [config.expectedRole, sectionNavItems]);
+
+  useEffect(() => {
+    if (!content?.patientProfile || isEditingPatientProfile) {
+      return;
+    }
+
+    const patient = content.patientProfile;
+    const nextAvatar = getPatientAvatarSrc(patient);
+    const nextName = typeof patient.userId === "string" ? "" : patient.userId?.name ?? "";
+    const nextPhone = typeof patient.userId === "string" ? "" : patient.userId?.phone ?? "";
+
+    setPatientProfileForm({
+      avatar: nextAvatar,
+      name: nextName,
+      phone: nextPhone,
+      gender: patient.gender ?? "",
+      dateOfBirth: formatDateForInput(patient.dateOfBirth),
+      address: patient.address ?? "",
+    });
+  }, [content?.patientProfile, isEditingPatientProfile]);
 
   useEffect(() => {
     if (user?.role === "doctor" && content?.doctorProfileId) {
@@ -1489,6 +1744,97 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
   function closeDoctorForm() {
     setIsDoctorFormOpen(false);
     resetDoctorForm();
+  }
+
+  function resetPatientProfileForm() {
+    const patient = content?.patientProfile;
+    const nextAvatar = getPatientAvatarSrc(patient);
+
+    setPatientProfileForm({
+      avatar: nextAvatar,
+      name: typeof patient?.userId === "string" ? "" : patient?.userId?.name ?? "",
+      phone: typeof patient?.userId === "string" ? "" : patient?.userId?.phone ?? "",
+      gender: patient?.gender ?? "",
+      dateOfBirth: formatDateForInput(patient?.dateOfBirth),
+      address: patient?.address ?? "",
+    });
+  }
+
+  function openPatientProfileEdit() {
+    resetPatientProfileForm();
+    setPatientProfileMessage("");
+    setPatientProfileError("");
+    setIsEditingPatientProfile(true);
+  }
+
+  function cancelPatientProfileEdit() {
+    resetPatientProfileForm();
+    setPatientProfileMessage("");
+    setPatientProfileError("");
+    setIsEditingPatientProfile(false);
+  }
+
+  async function handlePatientProfileAvatarChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      const avatarUrl = await uploadDoctorAvatar(file);
+      setPatientProfileForm((current) => ({ ...current, avatar: avatarUrl }));
+    } catch (uploadError) {
+      setPatientProfileError(uploadError instanceof Error ? uploadError.message : "Failed to load image");
+    } finally {
+      event.target.value = "";
+    }
+  }
+
+  async function handlePatientProfileSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!user) {
+      return;
+    }
+
+    setPatientProfileMessage("");
+    setPatientProfileError("");
+    setIsSavingPatientProfile(true);
+
+    try {
+      const response = await requestJson<PatientRecord>("/api/patients/me", {
+        method: "PATCH",
+        body: JSON.stringify({
+          avatar: patientProfileForm.avatar.trim() || undefined,
+          name: patientProfileForm.name.trim(),
+          phone: patientProfileForm.phone.trim(),
+          gender: patientProfileForm.gender.trim(),
+          dateOfBirth: patientProfileForm.dateOfBirth.trim(),
+          address: patientProfileForm.address.trim(),
+        }),
+      });
+
+      setContent((current) => (current ? { ...current, patientProfile: response.data ?? current.patientProfile } : current));
+      setPatientProfileMessage("Profile updated successfully.");
+      setIsEditingPatientProfile(false);
+      setPatientProfileForm({
+        avatar: response.data ? getPatientAvatarSrc(response.data) : patientProfileForm.avatar,
+        name:
+          response.data && typeof response.data.userId !== "string" ? response.data.userId?.name ?? "" : patientProfileForm.name,
+        phone:
+          response.data && typeof response.data.userId !== "string" ? response.data.userId?.phone ?? "" : patientProfileForm.phone,
+        gender: response.data?.gender ?? patientProfileForm.gender,
+        dateOfBirth: formatDateForInput(response.data?.dateOfBirth) || patientProfileForm.dateOfBirth,
+        address: response.data?.address ?? patientProfileForm.address,
+      });
+      await refreshDashboardContent(user);
+    } catch (profileUpdateError) {
+      setPatientProfileError(
+        profileUpdateError instanceof Error ? profileUpdateError.message : "Failed to update profile",
+      );
+    } finally {
+      setIsSavingPatientProfile(false);
+    }
   }
 
   async function handleDoctorAvatarChange(event: ChangeEvent<HTMLInputElement>) {
@@ -1725,6 +2071,145 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
       setAppointmentsError(cancelError instanceof Error ? cancelError.message : "Failed to cancel appointment");
     } finally {
       setIsCancellingId(null);
+    }
+  }
+
+  async function handleMarkNotificationAsRead(notificationId?: string) {
+    if (!notificationId || !user) {
+      return;
+    }
+
+    setNotificationsMessage("");
+    setNotificationsError("");
+    setBusyNotificationId(notificationId);
+
+    try {
+      await requestJson(`/api/notifications/${notificationId}/read`, { method: "PATCH" });
+      setContent((currentContent) => {
+        if (!currentContent?.notifications) {
+          return currentContent;
+        }
+
+        return {
+          ...currentContent,
+          notifications: currentContent.notifications.map((notification) =>
+            notification._id === notificationId ? { ...notification, isRead: true } : notification,
+          ),
+          unreadCount: Math.max((currentContent.unreadCount ?? 0) - 1, 0),
+        };
+      });
+      setNotificationsMessage("Notification marked as read.");
+      await refreshDashboardContent(user);
+    } catch (notificationError) {
+      setNotificationsError(
+        notificationError instanceof Error ? notificationError.message : "Failed to update notification",
+      );
+    } finally {
+      setBusyNotificationId(null);
+    }
+  }
+
+  async function handleMarkAllNotificationsAsRead() {
+    if (!user) {
+      return;
+    }
+
+    setNotificationsMessage("");
+    setNotificationsError("");
+    setIsMarkingAllNotifications(true);
+
+    try {
+      await requestJson("/api/notifications/read-all", { method: "PATCH" });
+      setContent((currentContent) =>
+        currentContent
+          ? {
+              ...currentContent,
+              notifications: currentContent.notifications?.map((notification) => ({ ...notification, isRead: true })) ?? [],
+              unreadCount: 0,
+            }
+          : currentContent,
+      );
+      setNotificationsMessage("All notifications marked as read.");
+      await refreshDashboardContent(user);
+    } catch (notificationError) {
+      setNotificationsError(
+        notificationError instanceof Error ? notificationError.message : "Failed to update notifications",
+      );
+    } finally {
+      setIsMarkingAllNotifications(false);
+    }
+  }
+
+  async function handleDeleteReadNotifications() {
+    if (!user) {
+      return;
+    }
+
+    const readNotifications = content?.notifications?.filter((notification) => notification.isRead) ?? [];
+    if (readNotifications.length === 0) {
+      return;
+    }
+
+    setNotificationsMessage("");
+    setNotificationsError("");
+    setIsMarkingAllNotifications(true);
+
+    try {
+      await Promise.all(readNotifications.map((notification) => requestJson(`/api/notifications/${notification._id}`, { method: "DELETE" })));
+      setContent((currentContent) =>
+        currentContent
+          ? {
+              ...currentContent,
+              notifications: currentContent.notifications?.filter((notification) => !notification.isRead) ?? [],
+              unreadCount: currentContent.unreadCount ?? 0,
+            }
+          : currentContent,
+      );
+      setNotificationsMessage("Read notifications deleted.");
+      await refreshDashboardContent(user);
+    } catch (notificationError) {
+      setNotificationsError(
+        notificationError instanceof Error ? notificationError.message : "Failed to delete notifications",
+      );
+    } finally {
+      setIsMarkingAllNotifications(false);
+    }
+  }
+
+  async function handleDeleteNotification(notificationId?: string) {
+    if (!notificationId || !user) {
+      return;
+    }
+
+    setNotificationsMessage("");
+    setNotificationsError("");
+    setBusyNotificationId(notificationId);
+
+    try {
+      const currentNotification = content?.notifications?.find((notification) => notification._id === notificationId);
+      await requestJson(`/api/notifications/${notificationId}`, { method: "DELETE" });
+      setContent((currentContent) => {
+        if (!currentContent?.notifications) {
+          return currentContent;
+        }
+
+        return {
+          ...currentContent,
+          notifications: currentContent.notifications.filter((notification) => notification._id !== notificationId),
+          unreadCount:
+            currentContent.unreadCount != null && currentNotification && !currentNotification.isRead
+              ? Math.max(currentContent.unreadCount - 1, 0)
+              : currentContent.unreadCount,
+        };
+      });
+      setNotificationsMessage("Notification deleted.");
+      await refreshDashboardContent(user);
+    } catch (notificationError) {
+      setNotificationsError(
+        notificationError instanceof Error ? notificationError.message : "Failed to delete notification",
+      );
+    } finally {
+      setBusyNotificationId(null);
     }
   }
 
@@ -2187,6 +2672,530 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                     </>
                   )}
                 </>
+              ) : activeSection === "Notifications" ? (
+                <>
+                  {(() => {
+                    const notifications = content.notifications ?? [];
+                    const filteredNotifications = notifications.filter((notification) => {
+                      if (patientNotificationFilter === "unread") {
+                        return !notification.isRead;
+                      }
+                      if (patientNotificationFilter === "read") {
+                        return Boolean(notification.isRead);
+                      }
+                      return true;
+                    });
+                    const readCount = notifications.filter((notification) => notification.isRead).length;
+                    const typeSummary = notifications.reduce<Record<string, number>>((summary, notification) => {
+                      const key = getNotificationTypeLabel(notification.type);
+                      summary[key] = (summary[key] ?? 0) + 1;
+                      return summary;
+                    }, {});
+
+                    return (
+                      <>
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Notifications</p>
+                            <h2 className="mt-2 text-2xl font-semibold tracking-tight sm:text-[1.7rem]">Live alerts and updates</h2>
+                            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                              View recent alerts from appointments, approvals, and system activity.
+                            </p>
+                          </div>
+                          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
+                            <div className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600">
+                              <span className="font-semibold text-slate-900">{content.unreadCount ?? 0}</span>
+                              <span className="ml-1">unread</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleMarkAllNotificationsAsRead}
+                              disabled={isMarkingAllNotifications || (content.notifications?.length ?? 0) === 0}
+                              className="inline-flex w-full items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                            >
+                              {isMarkingAllNotifications ? "Updating..." : "Mark all as read"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleDeleteReadNotifications}
+                              disabled={isMarkingAllNotifications || readCount === 0}
+                              className="inline-flex w-full items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                            >
+                              {isMarkingAllNotifications ? "Updating..." : "Clear read"}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="mt-5 flex flex-wrap items-center gap-2 rounded-3xl border border-slate-200 bg-slate-50 p-2">
+                          {[
+                            { key: "all", label: "All" },
+                            { key: "unread", label: "Unread" },
+                            { key: "read", label: "Read" },
+                          ].map((item) => {
+                            const isActive = patientNotificationFilter === item.key;
+                            return (
+                              <button
+                                key={item.key}
+                                type="button"
+                                onClick={() => setPatientNotificationFilter(item.key as "all" | "unread" | "read")}
+                                className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                                  isActive
+                                    ? "bg-blue-600 text-white shadow-sm"
+                                    : "bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                                }`}
+                              >
+                                {item.label}
+                              </button>
+                            );
+                          })}
+                          <div className="ml-auto rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600">
+                            <span className="font-semibold text-slate-900">{filteredNotifications.length}</span> shown
+                          </div>
+                        </div>
+
+                        <div className="mt-5 flex flex-wrap gap-2">
+                          {Object.entries(typeSummary).slice(0, 4).map(([label, value]) => (
+                            <div
+                              key={label}
+                              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600"
+                            >
+                              <span className="font-semibold text-slate-900">{value}</span>
+                              <span>{label}</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        {notificationsMessage ? (
+                          <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                            {notificationsMessage}
+                          </div>
+                        ) : null}
+
+                        {notificationsError || content.notificationsError ? (
+                          <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                            {notificationsError || content.notificationsError}
+                          </div>
+                        ) : null}
+
+                        <div className="mt-6">
+                          {content.notifications === undefined ? (
+                            <div className="rounded-3xl border border-slate-200 bg-slate-50 px-6 py-10 text-center">
+                              <div className="mx-auto size-10 animate-spin rounded-full border-4 border-slate-200 border-t-slate-950" />
+                              <p className="mt-4 text-sm font-medium text-slate-600">Loading notifications...</p>
+                            </div>
+                          ) : content.notifications.length === 0 ? (
+                            <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center">
+                              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">No notifications</p>
+                              <h3 className="mt-3 text-xl font-semibold tracking-tight text-slate-950">You are all caught up</h3>
+                              <p className="mt-3 text-sm leading-6 text-slate-600">
+                                New appointment updates and alerts will appear here.
+                              </p>
+                            </div>
+                          ) : filteredNotifications.length === 0 ? (
+                            <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center">
+                              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">No matches</p>
+                              <h3 className="mt-3 text-xl font-semibold tracking-tight text-slate-950">
+                                No {patientNotificationFilter === "all" ? "" : patientNotificationFilter} notifications found
+                              </h3>
+                              <p className="mt-3 text-sm leading-6 text-slate-600">
+                                Switch to another filter to view the rest of your notifications.
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="grid gap-4">
+                              {filteredNotifications.map((notification) => {
+                                const notificationId = notification._id ?? "";
+                                const isUnread = !notification.isRead;
+                                const typeLabel = getNotificationTypeLabel(notification.type);
+                                const typeClassName = getNotificationTypeClassName(notification.type);
+
+                                return (
+                            <article
+                                    key={notificationId || `${notification.title}-${notification.createdAt}`}
+                                    className={`rounded-3xl border p-4 sm:p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)] transition ${
+                                      isUnread ? "border-blue-100 bg-blue-50/70" : "border-slate-200 bg-slate-50"
+                                    }`}
+                                  >
+                                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                                      <div className="min-w-0">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          {isUnread ? <span className="size-2 rounded-full bg-blue-600" /> : null}
+                                          <h3 className="truncate text-lg font-semibold tracking-tight text-slate-950">
+                                            {notification.title ?? "Notification"}
+                                          </h3>
+                                          <span
+                                            className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${typeClassName}`}
+                                          >
+                                            {typeLabel}
+                                          </span>
+                                        </div>
+                                        <p className="mt-2 text-sm leading-6 text-slate-600">
+                                          {notification.message ?? "Notification details unavailable."}
+                                        </p>
+                                        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-medium text-slate-400">
+                                          <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 uppercase tracking-[0.16em]">
+                                            <Clock3 className="size-3.5" />
+                                            {formatRelativeTime(notification.createdAt)}
+                                          </span>
+                                          {notification.type ? (
+                                            <span className="uppercase tracking-[0.16em]">{notification.type}</span>
+                                          ) : null}
+                                        </div>
+                                      </div>
+
+                                      <div className="flex flex-wrap gap-2 sm:justify-end">
+                                        {isUnread ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleMarkNotificationAsRead(notificationId)}
+                                            disabled={busyNotificationId === notificationId}
+                                            className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                          >
+                                            {busyNotificationId === notificationId ? "Updating..." : "Mark read"}
+                                          </button>
+                                        ) : null}
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteNotification(notificationId)}
+                                          disabled={busyNotificationId === notificationId}
+                                          className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                        >
+                                          {busyNotificationId === notificationId ? "Updating..." : "Delete"}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </article>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    );
+                  })()}
+                </>
+              ) : activeSection === "Profile" ? (
+                <section className="bg-slate-50 px-6 pb-10 text-slate-900">
+                  <div className="mx-auto max-w-[1600px]">
+                    <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                        <div>
+                          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Profile</p>
+                          <h2 className="mt-2 text-2xl font-semibold tracking-tight">Your patient profile</h2>
+                          <p className="mt-2 text-sm leading-6 text-slate-600">
+                            Review and update your personal details, profile photo, and contact information.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={isEditingPatientProfile ? cancelPatientProfileEdit : openPatientProfileEdit}
+                          className={`inline-flex items-center justify-center rounded-full px-5 py-3 text-sm font-semibold transition ${
+                            isEditingPatientProfile
+                              ? "border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                              : "bg-blue-600 text-white hover:bg-blue-700"
+                          }`}
+                          style={!isEditingPatientProfile ? { color: "#ffffff" } : undefined}
+                        >
+                          {isEditingPatientProfile ? "Cancel edit" : "Edit Profile"}
+                        </button>
+                      </div>
+
+                      {patientProfileMessage ? (
+                        <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                          {patientProfileMessage}
+                        </div>
+                      ) : null}
+
+                      {patientProfileError || content.patientProfileError ? (
+                        <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                          {patientProfileError || content.patientProfileError}
+                        </div>
+                      ) : null}
+
+                      {content.patientProfileError ? (
+                        <div className="mt-6 rounded-3xl border border-dashed border-red-200 bg-red-50 px-6 py-10 text-center">
+                          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-red-600">Profile error</p>
+                          <h3 className="mt-3 text-xl font-semibold tracking-tight text-slate-950">
+                            Unable to load your profile
+                          </h3>
+                          <p className="mt-3 text-sm leading-6 text-slate-600">{content.patientProfileError}</p>
+                        </div>
+                      ) : content.patientProfile === undefined ? (
+                        <div className="mt-6 rounded-3xl border border-slate-200 bg-slate-50 px-6 py-10 text-center">
+                          <div className="mx-auto size-10 animate-spin rounded-full border-4 border-slate-200 border-t-slate-950" />
+                          <p className="mt-4 text-sm font-medium text-slate-600">Loading profile...</p>
+                        </div>
+                      ) : (
+                        <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+                          <div className="rounded-[1.75rem] border border-slate-200 bg-slate-50 p-5 shadow-sm">
+                            <div className="rounded-[1.5rem] border border-white bg-white p-5">
+                              <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-center sm:text-left">
+                                <div className="flex size-28 shrink-0 items-center justify-center overflow-hidden rounded-[1.75rem] border border-slate-200 bg-slate-50">
+                                  {patientProfileForm.avatar.trim() ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img
+                                      src={patientProfileForm.avatar.trim()}
+                                      alt={formatPatientName(content.patientProfile)}
+                                      className="h-full w-full object-contain object-center p-2"
+                                    />
+                                  ) : (
+                                    <div className="grid size-20 place-items-center rounded-[1.5rem] bg-gradient-to-br from-blue-600 to-cyan-500 text-2xl font-semibold text-white shadow-[0_16px_36px_rgba(37,99,235,0.2)]">
+                                      {getPatientInitials(content.patientProfile)}
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Account preview</p>
+                                  <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
+                                    {formatPatientName(content.patientProfile)}
+                                  </h3>
+                                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                                    {typeof content.patientProfile.userId === "string"
+                                      ? "Patient account details are linked to your profile."
+                                      : content.patientProfile.userId?.email ?? "No email available"}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="mt-5 flex flex-wrap gap-3">
+                                <input
+                                  id="patient-profile-photo"
+                                  type="file"
+                                  accept="image/*"
+                                  onChange={handlePatientProfileAvatarChange}
+                                  className="hidden"
+                                />
+                                <label
+                                  htmlFor="patient-profile-photo"
+                                  className="inline-flex cursor-pointer items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
+                                  style={{ color: "#ffffff" }}
+                                >
+                                  {patientProfileForm.avatar.trim() ? "Replace photo" : "Upload photo"}
+                                </label>
+                                {patientProfileForm.avatar.trim() ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setPatientProfileForm((current) => ({ ...current, avatar: "" }))}
+                                    className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                                  >
+                                    Remove photo
+                                  </button>
+                                ) : null}
+                              </div>
+                            </div>
+
+                            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                              <div className="rounded-2xl border border-white bg-white px-4 py-4 shadow-[0_6px_20px_rgba(15,23,42,0.03)]">
+                                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Email</p>
+                                <p className="mt-2 break-all text-sm font-medium text-slate-950">
+                                  {typeof content.patientProfile.userId === "string"
+                                    ? "Not available"
+                                    : content.patientProfile.userId?.email ?? "Not available"}
+                                </p>
+                              </div>
+                              <div className="rounded-2xl border border-white bg-white px-4 py-4 shadow-[0_6px_20px_rgba(15,23,42,0.03)]">
+                                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Phone</p>
+                                <p className="mt-2 break-all text-sm font-medium text-slate-950">
+                                  {typeof content.patientProfile.userId === "string"
+                                    ? "Not available"
+                                    : content.patientProfile.userId?.phone ?? "Not available"}
+                                </p>
+                              </div>
+                              <div className="rounded-2xl border border-white bg-white px-4 py-4 shadow-[0_6px_20px_rgba(15,23,42,0.03)]">
+                                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Gender</p>
+                                <p className="mt-2 text-sm font-medium text-slate-950">
+                                  {content.patientProfile.gender ? content.patientProfile.gender : "Not provided"}
+                                </p>
+                              </div>
+                              <div className="rounded-2xl border border-white bg-white px-4 py-4 shadow-[0_6px_20px_rgba(15,23,42,0.03)]">
+                                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Date of birth</p>
+                                <p className="mt-2 text-sm font-medium text-slate-950">
+                                  {formatDateOfBirth(content.patientProfile.dateOfBirth)}
+                                </p>
+                                {content.patientProfile.dateOfBirth ? (
+                                  <p className="mt-1 text-xs text-slate-500">
+                                    {calculateAge(content.patientProfile.dateOfBirth)} years old
+                                  </p>
+                                ) : null}
+                              </div>
+                            </div>
+
+                            <div className="mt-4 rounded-2xl border border-white bg-white px-4 py-4 shadow-[0_6px_20px_rgba(15,23,42,0.03)]">
+                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Address</p>
+                              <p className="mt-2 text-sm leading-6 text-slate-950">
+                                {content.patientProfile.address?.trim() ? content.patientProfile.address : "Not provided"}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="rounded-[1.75rem] border border-slate-200 bg-slate-50 p-5 shadow-sm">
+                            <div className="rounded-[1.5rem] border border-white bg-white p-5">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">
+                                    {isEditingPatientProfile ? "Edit profile" : "Profile details"}
+                                  </p>
+                                  <h3 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">
+                                    {isEditingPatientProfile ? "Update your information" : "Your saved profile information"}
+                                  </h3>
+                                </div>
+                              </div>
+
+                              {isEditingPatientProfile ? (
+                                <form onSubmit={handlePatientProfileSubmit} className="mt-6 space-y-4">
+                                  <div className="grid gap-4 md:grid-cols-2">
+                                    <label className="space-y-2 md:col-span-2">
+                                      <span className="text-sm font-medium text-slate-700">Full name</span>
+                                      <input
+                                        type="text"
+                                        value={patientProfileForm.name}
+                                        onChange={(event) =>
+                                          setPatientProfileForm((current) => ({ ...current, name: event.target.value }))
+                                        }
+                                        className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                                        required
+                                      />
+                                    </label>
+
+                                    <label className="space-y-2">
+                                      <span className="text-sm font-medium text-slate-700">Phone</span>
+                                      <input
+                                        type="tel"
+                                        value={patientProfileForm.phone}
+                                        onChange={(event) =>
+                                          setPatientProfileForm((current) => ({ ...current, phone: event.target.value }))
+                                        }
+                                        className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                                        placeholder="Phone number"
+                                      />
+                                    </label>
+
+                                    <label className="space-y-2">
+                                      <span className="text-sm font-medium text-slate-700">Gender</span>
+                                      <select
+                                        value={patientProfileForm.gender}
+                                        onChange={(event) =>
+                                          setPatientProfileForm((current) => ({ ...current, gender: event.target.value }))
+                                        }
+                                        className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                                      >
+                                        <option value="">Select gender</option>
+                                        <option value="male">Male</option>
+                                        <option value="female">Female</option>
+                                        <option value="other">Other</option>
+                                      </select>
+                                    </label>
+
+                                    <label className="space-y-2">
+                                      <span className="text-sm font-medium text-slate-700">Date of birth</span>
+                                      <input
+                                        type="date"
+                                        value={patientProfileForm.dateOfBirth}
+                                        onChange={(event) =>
+                                          setPatientProfileForm((current) => ({ ...current, dateOfBirth: event.target.value }))
+                                        }
+                                        className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                                      />
+                                    </label>
+
+                                    <label className="space-y-2 md:col-span-2">
+                                      <span className="text-sm font-medium text-slate-700">Address</span>
+                                      <textarea
+                                        value={patientProfileForm.address}
+                                        onChange={(event) =>
+                                          setPatientProfileForm((current) => ({ ...current, address: event.target.value }))
+                                        }
+                                        className="min-h-[120px] w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                                        placeholder="Your address"
+                                      />
+                                    </label>
+
+                                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 md:col-span-2">
+                                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Email</p>
+                                      <p className="mt-2 break-all text-sm font-medium text-slate-950">
+                                        {typeof content.patientProfile.userId === "string"
+                                          ? "Not available"
+                                          : content.patientProfile.userId?.email ?? "Not available"}
+                                      </p>
+                                      <p className="mt-2 text-xs text-slate-500">Email is managed from your account profile.</p>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex flex-wrap gap-3 pt-2">
+                                    <button
+                                      type="submit"
+                                      disabled={isSavingPatientProfile}
+                                      className="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70"
+                                      style={{ color: "#ffffff" }}
+                                    >
+                                      {isSavingPatientProfile ? "Saving..." : "Save changes"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={cancelPatientProfileEdit}
+                                      className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </form>
+                              ) : (
+                                <div className="mt-6 grid gap-4 md:grid-cols-2">
+                                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Full name</p>
+                                    <p className="mt-2 text-sm font-medium text-slate-950">
+                                      {formatPatientName(content.patientProfile)}
+                                    </p>
+                                  </div>
+                                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Email</p>
+                                    <p className="mt-2 break-all text-sm font-medium text-slate-950">
+                                      {typeof content.patientProfile.userId === "string"
+                                        ? "Not available"
+                                        : content.patientProfile.userId?.email ?? "Not available"}
+                                    </p>
+                                  </div>
+                                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Phone</p>
+                                    <p className="mt-2 break-all text-sm font-medium text-slate-950">
+                                      {typeof content.patientProfile.userId === "string"
+                                        ? "Not available"
+                                        : content.patientProfile.userId?.phone ?? "Not available"}
+                                    </p>
+                                  </div>
+                                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Gender</p>
+                                    <p className="mt-2 text-sm font-medium text-slate-950">
+                                      {content.patientProfile.gender ? content.patientProfile.gender : "Not provided"}
+                                    </p>
+                                  </div>
+                                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Date of birth</p>
+                                    <p className="mt-2 text-sm font-medium text-slate-950">
+                                      {formatDateOfBirth(content.patientProfile.dateOfBirth)}
+                                    </p>
+                                    {content.patientProfile.dateOfBirth ? (
+                                      <p className="mt-1 text-xs text-slate-500">
+                                        {calculateAge(content.patientProfile.dateOfBirth)} years old
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Address</p>
+                                    <p className="mt-2 text-sm leading-6 text-slate-950">
+                                      {content.patientProfile.address?.trim() ? content.patientProfile.address : "Not provided"}
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </section>
               ) : (
                 <>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">

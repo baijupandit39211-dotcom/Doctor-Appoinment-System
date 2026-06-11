@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { BellRing, CheckCheck, Loader2, Trash2, X } from "lucide-react";
+import { BellRing, CheckCheck, Clock3, Loader2, MoreHorizontal, Trash2, X } from "lucide-react";
 
 import { requestJson } from "@/lib/api-client";
 import { disconnectNotificationSocket, getNotificationSocket } from "@/lib/socket";
@@ -70,6 +70,42 @@ function formatRelativeTime(value?: string) {
   return `${diffDays}d ago`;
 }
 
+function getNotificationTypeLabel(type?: string) {
+  const normalizedType = type?.trim().replace(/[_-]+/g, " ").trim();
+  if (!normalizedType) {
+    return "Update";
+  }
+
+  return normalizedType
+    .split(/\s+/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function getNotificationTypeClassName(type?: string) {
+  const normalizedType = type?.trim().toLowerCase();
+
+  switch (normalizedType) {
+    case "appointment":
+    case "appointments":
+      return "border-sky-200 bg-sky-50 text-sky-700";
+    case "approval":
+    case "doctor_approval":
+    case "doctor approval":
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    case "system":
+    case "info":
+      return "border-slate-200 bg-slate-50 text-slate-700";
+    case "warning":
+      return "border-amber-200 bg-amber-50 text-amber-700";
+    case "urgent":
+    case "alert":
+      return "border-rose-200 bg-rose-50 text-rose-700";
+    default:
+      return "border-slate-200 bg-slate-50 text-slate-700";
+  }
+}
+
 async function playNotificationTone() {
   try {
     const audio = new Audio("/sounds/notification.mp3");
@@ -113,6 +149,7 @@ export function NotificationBell({ user }: { user: DashboardUser | null | undefi
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
+  const [openNotificationMenuId, setOpenNotificationMenuId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [isMarkingAll, setIsMarkingAll] = useState(false);
@@ -127,6 +164,7 @@ export function NotificationBell({ user }: { user: DashboardUser | null | undefi
       setUnreadCount(0);
       setError("");
       setIsOpen(false);
+      setOpenNotificationMenuId(null);
       return;
     }
 
@@ -220,6 +258,7 @@ export function NotificationBell({ user }: { user: DashboardUser | null | undefi
     function handleDocumentClick(event: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setIsOpen(false);
+        setOpenNotificationMenuId(null);
       }
     }
 
@@ -278,6 +317,25 @@ export function NotificationBell({ user }: { user: DashboardUser | null | undefi
     }
   }
 
+  async function deleteReadNotifications() {
+    const readNotifications = notifications.filter((notification) => notification.isRead);
+    if (readNotifications.length === 0) {
+      return;
+    }
+
+    setIsMarkingAll(true);
+    setError("");
+
+    try {
+      await Promise.all(readNotifications.map((notification) => requestJson(`/api/notifications/${notification._id}`, { method: "DELETE" })));
+      setNotifications((current) => current.filter((notification) => !notification.isRead));
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Failed to delete notifications");
+    } finally {
+      setIsMarkingAll(false);
+    }
+  }
+
   async function deleteNotification(notificationId: string) {
     setBusyNotificationId(notificationId);
     setError("");
@@ -300,7 +358,15 @@ export function NotificationBell({ user }: { user: DashboardUser | null | undefi
       <div className="relative" ref={containerRef}>
         <button
           type="button"
-          onClick={() => setIsOpen((current) => !current)}
+          onClick={() =>
+            setIsOpen((current) => {
+              const next = !current;
+              if (!next) {
+                setOpenNotificationMenuId(null);
+              }
+              return next;
+            })
+          }
           className="relative grid size-11 shrink-0 place-items-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-[0_8px_24px_rgba(15,23,42,0.04)] transition hover:bg-slate-50"
           aria-label="Notifications"
           aria-expanded={isOpen}
@@ -314,24 +380,27 @@ export function NotificationBell({ user }: { user: DashboardUser | null | undefi
         </button>
 
         {isOpen ? (
-          <div className="absolute right-0 top-14 z-50 w-[min(22rem,calc(100vw-1rem))] rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-[0_20px_60px_rgba(15,23,42,0.15)]">
-            <div className="flex items-start justify-between gap-3">
-              <div>
+          <div className="absolute right-0 top-14 z-50 w-[min(24rem,calc(100vw-1rem))] rounded-[2rem] border border-slate-200 bg-white p-4 shadow-[0_20px_60px_rgba(15,23,42,0.15)]">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
                 <p className="text-sm font-semibold text-slate-950">Notifications</p>
-                <p className="mt-1 text-xs text-slate-500">Live updates from appointments and approvals.</p>
+                <p className="mt-1 text-xs text-slate-500">Live alerts and updates</p>
               </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={markAllAsRead}
                   disabled={isMarkingAll || unreadCount === 0}
-                  className="inline-flex items-center rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex items-center justify-center whitespace-nowrap rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-medium leading-none text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isMarkingAll ? "Updating..." : "Mark all as read"}
                 </button>
                 <button
                   type="button"
-                  onClick={() => setIsOpen(false)}
+                  onClick={() => {
+                    setOpenNotificationMenuId(null);
+                    setIsOpen(false);
+                  }}
                   className="grid size-8 place-items-center rounded-full border border-slate-200 text-slate-500 transition hover:bg-slate-50"
                   aria-label="Close notifications"
                 >
@@ -340,67 +409,109 @@ export function NotificationBell({ user }: { user: DashboardUser | null | undefi
               </div>
             </div>
 
-            <div className="mt-4">
+            <div className="mt-5">
               {error ? (
                 <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
               ) : null}
 
               {isLoading ? (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-8 text-center">
+                <div className="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-8 text-center">
                   <Loader2 className="mx-auto size-5 animate-spin text-slate-500" />
                   <p className="mt-3 text-sm text-slate-600">Loading notifications...</p>
                 </div>
               ) : notifications.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center">
+                <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center">
                   <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">No notifications</p>
                   <p className="mt-2 text-sm text-slate-600">Recent alerts will show here.</p>
                 </div>
               ) : (
                 <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
-                  {notifications.slice(0, 8).map((notification) => (
-                    <article
-                      key={notification._id}
-                      className={`rounded-2xl border p-3 transition ${
-                        notification.isRead ? "border-slate-200 bg-white" : "border-blue-100 bg-blue-50/70"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            {!notification.isRead ? <span className="size-2 rounded-full bg-blue-600" /> : null}
-                            <p className="truncate text-sm font-semibold text-slate-950">{notification.title}</p>
-                          </div>
-                          <p className="mt-1 text-sm leading-6 text-slate-600">{notification.message}</p>
-                          <p className="mt-2 text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
-                            {formatRelativeTime(notification.createdAt)}
-                          </p>
-                        </div>
-                      </div>
+                  {notifications.slice(0, 8).map((notification) => {
+                    const isUnread = !notification.isRead;
+                    const isMenuOpen = openNotificationMenuId === notification._id;
 
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {!notification.isRead ? (
-                          <button
-                            type="button"
-                            onClick={() => markAsRead(notification._id)}
-                            disabled={busyNotificationId === notification._id}
-                            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            <CheckCheck className="size-3.5" />
-                            {busyNotificationId === notification._id ? "Updating..." : "Mark read"}
-                          </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={() => deleteNotification(notification._id)}
-                          disabled={busyNotificationId === notification._id}
-                          className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          <Trash2 className="size-3.5" />
-                          {busyNotificationId === notification._id ? "Updating..." : "Delete"}
-                        </button>
-                      </div>
-                    </article>
-                  ))}
+                    return (
+                      <article
+                        key={notification._id}
+                        className={`relative rounded-3xl border px-3.5 py-3 transition sm:px-4 sm:py-4 ${
+                          isUnread ? "border-blue-100 bg-blue-50/70" : "border-slate-200 bg-white"
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="mt-1 flex shrink-0 items-center gap-2">
+                            {isUnread ? <span className="size-2 rounded-full bg-blue-600" /> : <span className="size-2 rounded-full bg-slate-300" />}
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start gap-3">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center justify-between gap-3">
+                                  <p className="truncate text-sm font-semibold text-slate-950">{notification.title}</p>
+                                  <span className="whitespace-nowrap text-xs font-medium text-slate-400">
+                                    {formatRelativeTime(notification.createdAt)}
+                                  </span>
+                                </div>
+                                <p className="mt-1 line-clamp-2 text-sm leading-5 text-slate-600">
+                                  {notification.message}
+                                </p>
+                              </div>
+
+                              <div className="relative shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setOpenNotificationMenuId((current) =>
+                                      current === notification._id ? null : notification._id,
+                                    )
+                                  }
+                                  className="grid size-8 place-items-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                                  aria-label="Notification actions"
+                                  aria-haspopup="menu"
+                                  aria-expanded={isMenuOpen}
+                                >
+                                  <MoreHorizontal className="size-4" />
+                                </button>
+
+                                {isMenuOpen ? (
+                                  <div className="absolute right-0 top-9 z-10 w-36 rounded-2xl border border-slate-200 bg-white p-1 shadow-[0_16px_40px_rgba(15,23,42,0.12)]">
+                                    {!notification.isRead ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setOpenNotificationMenuId(null);
+                                          markAsRead(notification._id);
+                                        }}
+                                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
+                                      >
+                                        <CheckCheck className="size-4" />
+                                        Mark read
+                                      </button>
+                                    ) : null}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setOpenNotificationMenuId(null);
+                                        deleteNotification(notification._id);
+                                      }}
+                                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-rose-700 transition hover:bg-rose-50"
+                                    >
+                                      <Trash2 className="size-4" />
+                                      Delete
+                                    </button>
+                                  </div>
+                                ) : null}
+                              </div>
+                            </div>
+
+                            <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-400">
+                              <Clock3 className="size-3.5" />
+                              <span>{formatRelativeTime(notification.createdAt)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })}
                 </div>
               )}
             </div>

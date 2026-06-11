@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { motion, useScroll, useTransform, useInView, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import {
@@ -9,6 +10,80 @@ import {
   Lock, CloudUpload, UserCog, Heart, Clock, TrendingUp, Plus, Play,
   Globe, Mail, MessageCircle, Menu, X,
 } from "lucide-react";
+
+import { API_BASE_URL } from "@/lib/api";
+import { getCurrentUser, logoutUser, type AuthRole, type AuthUser } from "@/lib/auth";
+
+function getDashboardHref(role?: AuthRole) {
+  switch (role) {
+    case "patient":
+      return "/patient";
+    case "doctor":
+      return "/doctor";
+    case "clinic_admin":
+    case "super_admin":
+      return `/${role === "clinic_admin" ? "admin" : "superadmin"}`;
+    default:
+      return "/login";
+  }
+}
+
+function getProfileHref(role?: AuthRole) {
+  switch (role) {
+    case "patient":
+      return "/patient?section=Profile";
+    case "doctor":
+      return "/doctor?section=Profile";
+    case "clinic_admin":
+      return "/admin";
+    case "super_admin":
+      return "/superadmin";
+    default:
+      return "/login";
+  }
+}
+
+function getAppointmentsHref(role?: AuthRole) {
+  switch (role) {
+    case "patient":
+      return "/patient?section=Appointments";
+    case "doctor":
+      return "/doctor?section=Appointments";
+    case "clinic_admin":
+      return "/admin?section=Appointments";
+    case "super_admin":
+      return "/superadmin?section=Appointments";
+    default:
+      return "/login";
+  }
+}
+
+function getUserAvatarSrc(user?: AuthUser | null) {
+  const avatar = user?.avatar?.trim();
+  if (!avatar) {
+    return "";
+  }
+
+  if (avatar.startsWith("data:") || avatar.startsWith("http://") || avatar.startsWith("https://")) {
+    return avatar;
+  }
+
+  return avatar.startsWith("/") ? `${API_BASE_URL}${avatar}` : `${API_BASE_URL}/${avatar}`;
+}
+
+function getUserInitials(name?: string) {
+  const value = name?.trim();
+  if (!value) {
+    return "U";
+  }
+
+  return value
+    .split(/\s+/)
+    .map((part) => part[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+}
 
 /* ---------------- NAV ---------------- */
 export function Nav() {
