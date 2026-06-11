@@ -589,41 +589,11 @@ export function DoctorManagementPage({
                   </div>
                 </div>
 
-                {isPendingDoctor ? (
-                  <div className="flex flex-wrap gap-3">
-                    <button
-                      type="button"
-                      onClick={() => handleDoctorAction("approve")}
-                      disabled={isSavingAction}
-                      className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-3 text-sm font-semibold !text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70"
-                      style={{ color: "#ffffff" }}
-                    >
-                      <CheckCircle2 className="mr-2 size-4" />
-                      {isSavingAction ? "Updating..." : "Approve"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDoctorAction("reject")}
-                      disabled={isSavingAction}
-                      className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-70"
-                    >
-                      <XCircle className="mr-2 size-4" />
-                      Reject
-                    </button>
-                    <button
-                      type="button"
-                      onClick={openEditPage}
-                      className="inline-flex items-center justify-center rounded-full border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
-                    >
-                      <PencilLine className="mr-2 size-4" />
-                      Edit
-                    </button>
-                  </div>
-                ) : (
+                {!isPendingDoctor ? (
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
                     Approval actions are available only for pending doctor profiles.
                   </div>
-                )}
+                ) : null}
               </div>
             </div>
           </div>

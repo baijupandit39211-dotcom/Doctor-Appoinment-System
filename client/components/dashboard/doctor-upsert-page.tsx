@@ -221,13 +221,48 @@ const specializationOptions = [
   "Other",
 ] as const;
 
-function readFileAsDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
-    reader.onerror = () => reject(new Error("Failed to read image file"));
-    reader.readAsDataURL(file);
+function loadImageFromFile(file: File) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Failed to read image file"));
+    };
+    image.src = objectUrl;
   });
+}
+
+async function readFileAsDataUrl(file: File) {
+  const image = await loadImageFromFile(file);
+  const maxDimension = 720;
+  const scale = Math.min(1, maxDimension / Math.max(image.width || 1, image.height || 1));
+  const width = Math.max(1, Math.round((image.width || 1) * scale));
+  const height = Math.max(1, Math.round((image.height || 1) * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Failed to prepare image for upload");
+  }
+
+  context.drawImage(image, 0, 0, width, height);
+
+  let quality = 0.82;
+  let output = canvas.toDataURL("image/jpeg", quality);
+
+  while (output.length > 90000 && quality > 0.5) {
+    quality -= 0.1;
+    output = canvas.toDataURL("image/jpeg", quality);
+  }
+
+  return output;
 }
 
 const cloudinaryCloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME?.trim() ?? "";

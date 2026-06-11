@@ -134,6 +134,16 @@ export async function createDoctorAccount(input: {
       throw new AppError("Doctor profile already exists for this user", 409);
     }
 
+    if (input.userId && input.avatar !== undefined) {
+      const linkedUser = await UserModel.findById(input.userId);
+      if (!linkedUser) {
+        throw new AppError("Linked user not found", 404);
+      }
+
+      linkedUser.avatar = input.avatar?.trim() || undefined;
+      await linkedUser.save();
+    }
+
     const doctor = await DoctorModel.create({
       userId: user._id,
       clinicId: input.clinicId,

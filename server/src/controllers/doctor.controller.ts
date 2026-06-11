@@ -207,7 +207,7 @@ export async function updateDoctor(req: Request, res: Response, next: NextFuncti
     }
 
     const linkedUserId = typeof doctor.userId === "string" ? doctor.userId : doctor.userId?.toString?.() ?? "";
-    if (linkedUserId && (name || email || password)) {
+    if (linkedUserId && (name || email || password || avatar !== undefined)) {
       const linkedUser = await UserModel.findById(linkedUserId).select("+password");
       if (!linkedUser) {
         throw new AppError("Linked user not found", 404);
