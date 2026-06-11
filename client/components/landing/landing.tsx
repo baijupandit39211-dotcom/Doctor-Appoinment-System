@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, useScroll, useTransform, useInView, AnimatePresence } from "framer-motion";
 import Link from "next/link";
@@ -205,6 +205,7 @@ export function Nav() {
                 className="flex items-center gap-3 rounded-full border border-slate-200 bg-white px-2 py-1.5 shadow-[0_10px_24px_rgba(15,23,42,0.06)] transition hover:bg-slate-50"
                 aria-haspopup="menu"
                 aria-expanded={accountOpen}
+                aria-label={`Open account menu${user?.name ? ` for ${user.name}` : ""}`}
               >
                 <div className="grid size-9 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-blue-600 to-cyan-500 text-sm font-semibold text-white">
                   {avatarSrc ? (

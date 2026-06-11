@@ -2984,49 +2984,6 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                                 ) : null}
                               </div>
                             </div>
-
-                            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                              <div className="rounded-2xl border border-white bg-white px-4 py-4 shadow-[0_6px_20px_rgba(15,23,42,0.03)]">
-                                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Email</p>
-                                <p className="mt-2 break-all text-sm font-medium text-slate-950">
-                                  {typeof content.patientProfile.userId === "string"
-                                    ? "Not available"
-                                    : content.patientProfile.userId?.email ?? "Not available"}
-                                </p>
-                              </div>
-                              <div className="rounded-2xl border border-white bg-white px-4 py-4 shadow-[0_6px_20px_rgba(15,23,42,0.03)]">
-                                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Phone</p>
-                                <p className="mt-2 break-all text-sm font-medium text-slate-950">
-                                  {typeof content.patientProfile.userId === "string"
-                                    ? "Not available"
-                                    : content.patientProfile.userId?.phone ?? "Not available"}
-                                </p>
-                              </div>
-                              <div className="rounded-2xl border border-white bg-white px-4 py-4 shadow-[0_6px_20px_rgba(15,23,42,0.03)]">
-                                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Gender</p>
-                                <p className="mt-2 text-sm font-medium text-slate-950">
-                                  {content.patientProfile.gender ? content.patientProfile.gender : "Not provided"}
-                                </p>
-                              </div>
-                              <div className="rounded-2xl border border-white bg-white px-4 py-4 shadow-[0_6px_20px_rgba(15,23,42,0.03)]">
-                                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Date of birth</p>
-                                <p className="mt-2 text-sm font-medium text-slate-950">
-                                  {formatDateOfBirth(content.patientProfile.dateOfBirth)}
-                                </p>
-                                {content.patientProfile.dateOfBirth ? (
-                                  <p className="mt-1 text-xs text-slate-500">
-                                    {calculateAge(content.patientProfile.dateOfBirth)} years old
-                                  </p>
-                                ) : null}
-                              </div>
-                            </div>
-
-                            <div className="mt-4 rounded-2xl border border-white bg-white px-4 py-4 shadow-[0_6px_20px_rgba(15,23,42,0.03)]">
-                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Address</p>
-                              <p className="mt-2 text-sm leading-6 text-slate-950">
-                                {content.patientProfile.address?.trim() ? content.patientProfile.address : "Not provided"}
-                              </p>
-                            </div>
                           </div>
 
                           <div className="rounded-[1.75rem] border border-slate-200 bg-slate-50 p-5 shadow-sm">
