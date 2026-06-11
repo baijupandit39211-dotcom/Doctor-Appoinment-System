@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
@@ -460,6 +460,62 @@ function formatTime(value?: string) {
   return value;
 }
 
+const patientDoctorSpecialityOptions = [
+  "General Physician",
+  "Cardiologist",
+  "Dermatologist",
+  "Neurologist",
+  "Pediatrician",
+  "Orthopedic Surgeon",
+  "Gynecologist",
+  "Psychiatrist",
+  "Dentist",
+  "ENT Specialist",
+  "Gastroenterologist",
+  "Other",
+] as const;
+
+const patientDoctorSpecialityAliases: Record<string, string[]> = {
+  "General Physician": ["General Physician", "General Practice"],
+  Cardiologist: ["Cardiologist"],
+  Dermatologist: ["Dermatologist"],
+  Neurologist: ["Neurologist"],
+  Pediatrician: ["Pediatrician"],
+  "Orthopedic Surgeon": ["Orthopedic Surgeon"],
+  Gynecologist: ["Gynecologist"],
+  Psychiatrist: ["Psychiatrist"],
+  Dentist: ["Dentist"],
+  "ENT Specialist": ["ENT Specialist"],
+  Gastroenterologist: ["Gastroenterologist"],
+  Other: [],
+};
+
+function normalizeSpecialityLabel(value?: string) {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+function doctorMatchesPatientSpeciality(doctor: DoctorRecord, selectedSpeciality: string) {
+  if (selectedSpeciality === "all") {
+    return true;
+  }
+
+  const doctorSpeciality = normalizeSpecialityLabel(doctor.specialization);
+  if (!doctorSpeciality) {
+    return false;
+  }
+
+  if (selectedSpeciality === "Other") {
+    return !patientDoctorSpecialityOptions.slice(0, -1).some((option) => {
+      return (patientDoctorSpecialityAliases[option] ?? [option]).some(
+        (alias) => normalizeSpecialityLabel(alias) === doctorSpeciality,
+      );
+    });
+  }
+
+  return (patientDoctorSpecialityAliases[selectedSpeciality] ?? [selectedSpeciality]).some(
+    (alias) => normalizeSpecialityLabel(alias) === doctorSpeciality,
+  );
+}
 function doctorStatusMeta(status?: string, isPublic?: boolean) {
   switch (status) {
     case "pending":
@@ -1143,6 +1199,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
   const [doctorsMessage, setDoctorsMessage] = useState("");
   const [departmentsMessage, setDepartmentsMessage] = useState("");
   const [patientDoctorsSearchQuery, setPatientDoctorsSearchQuery] = useState("");
+  const [patientDoctorsSpeciality, setPatientDoctorsSpeciality] = useState("all");
   const [patientDoctorsDepartment, setPatientDoctorsDepartment] = useState("all");
   const [patientDoctorsSortBy, setPatientDoctorsSortBy] = useState<"featured" | "experience_desc" | "fee_asc" | "fee_desc">(
     "featured",
@@ -1805,16 +1862,31 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
     }
   }
 
+  const patientDoctorDepartments = useMemo(() => {
+    const names = new Set<string>();
+
+    (content?.doctors ?? []).forEach((doctor) => {
+      const departmentName = resolveDoctorDepartmentName(doctor);
+      if (departmentName !== "Department unavailable") {
+        names.add(departmentName);
+      }
+    });
+
+    return [...names].sort((left, right) => left.localeCompare(right));
+  }, [content?.doctors]);
+
   const filteredPatientDoctors = useMemo(() => {
     if (user?.role !== "patient") {
       return [];
     }
 
-    const doctors = content?.doctors ?? [];
+    const doctors = (content?.doctors ?? []).filter(
+      (doctor) => doctor.profileStatus === "approved" && doctor.isPublic === true && doctor.isAvailable === true,
+    );
     let nextDoctors = doctors;
 
-    if (patientDoctorsDepartment !== "all") {
-      nextDoctors = nextDoctors.filter((doctor) => resolveDoctorDepartmentName(doctor) === patientDoctorsDepartment);
+    if (patientDoctorsSpeciality !== "all") {
+      nextDoctors = nextDoctors.filter((doctor) => doctorMatchesPatientSpeciality(doctor, patientDoctorsSpeciality));
     }
 
     if (patientDoctorsSearchQuery.trim()) {
@@ -1840,20 +1912,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
     });
 
     return sortedDoctors;
-  }, [content?.doctors, patientDoctorsDepartment, patientDoctorsSearchQuery, patientDoctorsSortBy, user?.role]);
-
-  const patientDoctorDepartments = useMemo(() => {
-    const names = new Set<string>();
-
-    (content?.doctors ?? []).forEach((doctor) => {
-      const departmentName = resolveDoctorDepartmentName(doctor);
-      if (departmentName !== "Department unavailable") {
-        names.add(departmentName);
-      }
-    });
-
-    return [...names].sort((left, right) => left.localeCompare(right));
-  }, [content?.doctors]);
+  }, [content?.doctors, patientDoctorsSearchQuery, patientDoctorsSortBy, patientDoctorsSpeciality, user?.role]);
 
   if (isLoading) {
     return (
@@ -1965,178 +2024,166 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                     </div>
                   ) : (
                     <>
-                      <div className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1fr)_220px_220px]">
-                        <label className="space-y-2">
-                          <span className="text-sm font-medium text-slate-700">Search doctors</span>
-                          <input
-                            type="text"
-                            value={patientDoctorsSearchQuery}
-                            onChange={(event) => setPatientDoctorsSearchQuery(event.target.value)}
-                            placeholder="Search by name, specialization, department, or email"
-                            className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
-                          />
-                        </label>
+                      <div className="mt-6 grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
+                        <aside className="rounded-[1.75rem] border border-slate-200 bg-slate-50 p-5 shadow-sm">
+                          <div>
+                            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Speciality</p>
+                            <h3 className="mt-2 text-lg font-semibold tracking-tight text-slate-950">Filter doctors</h3>
+                            <p className="mt-2 text-sm leading-6 text-slate-600">Select a speciality to narrow the doctor list.</p>
+                          </div>
 
-                        <label className="space-y-2">
-                          <span className="text-sm font-medium text-slate-700">Department</span>
-                          <select
-                            value={patientDoctorsDepartment}
-                            onChange={(event) => setPatientDoctorsDepartment(event.target.value)}
-                            className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
-                          >
-                            <option value="all">All departments</option>
-                            {patientDoctorDepartments.map((departmentName) => (
-                              <option key={departmentName} value={departmentName}>
-                                {departmentName}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
+                          <div className="mt-5 flex flex-wrap gap-2 xl:flex-col xl:gap-2">
+                            {patientDoctorSpecialityOptions.map((speciality) => {
+                              const isActive = patientDoctorsSpeciality === speciality;
 
-                        <label className="space-y-2">
-                          <span className="text-sm font-medium text-slate-700">Sort by</span>
-                          <select
-                            value={patientDoctorsSortBy}
-                            onChange={(event) =>
-                              setPatientDoctorsSortBy(
-                                event.target.value as "featured" | "experience_desc" | "fee_asc" | "fee_desc",
-                              )
-                            }
-                            className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
-                          >
-                            <option value="featured">Featured</option>
-                            <option value="experience_desc">Experience high to low</option>
-                            <option value="fee_asc">Fee low to high</option>
-                            <option value="fee_desc">Fee high to low</option>
-                          </select>
-                        </label>
-                      </div>
-
-                      <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                        <span>
-                          Showing <span className="font-semibold text-slate-950">{filteredPatientDoctors.length}</span> of{" "}
-                          <span className="font-semibold text-slate-950">{content.doctors.length}</span> doctors
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPatientDoctorsSearchQuery("");
-                            setPatientDoctorsDepartment("all");
-                            setPatientDoctorsSortBy("featured");
-                          }}
-                          className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
-                        >
-                          Reset filters
-                        </button>
-                      </div>
-
-                      {filteredPatientDoctors.length === 0 ? (
-                        <div className="mt-6 rounded-3xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center">
-                          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">No doctors</p>
-                          <h3 className="mt-3 text-xl font-semibold tracking-tight text-slate-950">
-                            No doctors match the current filters
-                          </h3>
-                          <p className="mt-3 text-sm leading-6 text-slate-600">
-                            Try clearing the search or changing the department filter.
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                      {filteredPatientDoctors.map((doctor) => {
-                        const doctorId = doctor._id ?? "";
-                        const departmentName = resolveDoctorDepartmentName(doctor);
-                        const availabilitySlots = doctorId ? content.availabilityByDoctorId?.[doctorId] ?? [] : [];
-
-                        return (
-                          <article
-                            key={doctorId || `${typeof doctor.userId === "string" ? doctor.userId : doctor.userId?.email}-${doctor.specialization}`}
-                            className="rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]"
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <p className="text-sm font-semibold text-slate-950">{formatDoctorName(doctor)}</p>
-                                <p className="mt-1 text-xs text-slate-500">
-                                  {typeof doctor.userId === "string" ? "Email unavailable" : doctor.userId?.email ?? "Email unavailable"}
-                                </p>
-                              </div>
-                              <div className="flex flex-col items-end gap-2">
-                                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-                                  Available
-                                </span>
-                                <Link
-                                  href={doctorId ? `/doctors/${doctorId}` : "/doctors"}
-                                  className="inline-flex items-center justify-center rounded-full bg-blue-600 px-3 py-2 text-xs font-semibold !text-white shadow-sm transition hover:bg-blue-700 hover:!text-white"
-                                  style={{ color: "#ffffff" }}
+                              return (
+                                <button
+                                  key={speciality}
+                                  type="button"
+                                  onClick={() =>
+                                    setPatientDoctorsSpeciality((current) => (current === speciality ? "all" : speciality))
+                                  }
+                                  className={`inline-flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition xl:w-full ${
+                                    isActive
+                                      ? "border-blue-200 bg-blue-600 text-white shadow-sm"
+                                      : "border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:bg-blue-50 hover:text-slate-950"
+                                  }`}
                                 >
-                                  Book now
-                                </Link>
-                              </div>
-                            </div>
+                                  <span>{speciality}</span>
+                                  {isActive ? <span className="text-xs font-bold uppercase tracking-[0.16em]">On</span> : null}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </aside>
 
-                            <div className="mt-4 space-y-2 text-sm text-slate-600">
-                              <div className="flex items-center justify-between gap-3">
-                                <span>Specialization</span>
-                                <span className="font-medium text-slate-900">{doctor.specialization ?? "General Practice"}</span>
-                              </div>
-                              <div className="flex items-center justify-between gap-3">
-                                <span>Department</span>
-                                <span className="font-medium text-slate-900">{departmentName}</span>
-                              </div>
-                              <div className="flex items-center justify-between gap-3">
-                                <span>Consultation fee</span>
-                                <span className="font-medium text-slate-900">{formatDoctorFee(doctor)}</span>
-                              </div>
-                              <div className="flex items-center justify-between gap-3">
-                                <span>Experience</span>
-                                <span className="font-medium text-slate-900">
-                                  {doctor.experienceYears != null ? `${doctor.experienceYears} years` : "Not set"}
-                                </span>
-                              </div>
-                            </div>
+                        <div className="min-w-0">
+                          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_220px]">
+                            <label className="space-y-2">
+                              <span className="text-sm font-medium text-slate-700">Search doctors</span>
+                              <input
+                                type="text"
+                                value={patientDoctorsSearchQuery}
+                                onChange={(event) => setPatientDoctorsSearchQuery(event.target.value)}
+                                placeholder="Search by name or speciality"
+                                className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                              />
+                            </label>
 
-                            <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-600">Availability</p>
-                              {availabilitySlots.length > 0 ? (
-                                <div className="mt-3 flex flex-wrap gap-2">
-                                  {availabilitySlots.slice(0, 4).map((slot) => (
-                                    <span
-                                      key={slot._id}
-                                      className="inline-flex items-center rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700"
-                                    >
-                                      {slot.dayOfWeek ?? "day"} • {slot.startTime ?? "--:--"} - {slot.endTime ?? "--:--"}
-                                    </span>
-                                  ))}
-                                  {availabilitySlots.length > 4 ? (
-                                    <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                                      +{availabilitySlots.length - 4} more
-                                    </span>
-                                  ) : null}
-                                </div>
-                              ) : (
-                                <p className="mt-2 text-sm text-slate-500">No availability slots published yet.</p>
-                              )}
-                            </div>
-
-                            <div className="mt-5 flex flex-wrap gap-3">
-                              <Link
-                                href={doctorId ? `/doctors/${doctorId}` : "/doctors"}
-                                className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2.5 text-sm font-semibold !text-white shadow-sm transition hover:bg-blue-700 hover:!text-white"
-                                style={{ color: "#ffffff" }}
+                            <label className="space-y-2">
+                              <span className="text-sm font-medium text-slate-700">Sort by</span>
+                              <select
+                                value={patientDoctorsSortBy}
+                                onChange={(event) =>
+                                  setPatientDoctorsSortBy(
+                                    event.target.value as "featured" | "experience_desc" | "fee_asc" | "fee_desc",
+                                  )
+                                }
+                                className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
                               >
-                                View details
-                              </Link>
-                              <Link
-                                href="/doctors"
-                                className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
-                              >
-                                Book appointment
-                              </Link>
+                                <option value="featured">Featured</option>
+                                <option value="experience_desc">Experience high to low</option>
+                                <option value="fee_asc">Fee low to high</option>
+                                <option value="fee_desc">Fee high to low</option>
+                              </select>
+                            </label>
+                          </div>
+
+                          <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                            <span>
+                              Showing <span className="font-semibold text-slate-950">{filteredPatientDoctors.length}</span> of{" "}
+                              <span className="font-semibold text-slate-950">{(content.doctors ?? []).filter((doctor) => doctor.profileStatus === "approved" && doctor.isPublic === true && doctor.isAvailable === true).length}</span>{" "}
+                              doctors
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPatientDoctorsSearchQuery("");
+                                setPatientDoctorsSpeciality("all");
+                                setPatientDoctorsDepartment("all");
+                                setPatientDoctorsSortBy("featured");
+                              }}
+                              className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                            >
+                              Reset filters
+                            </button>
+                          </div>
+
+                          {filteredPatientDoctors.length === 0 ? (
+                            <div className="mt-6 rounded-3xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center">
+                              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">No doctors</p>
+                              <h3 className="mt-3 text-xl font-semibold tracking-tight text-slate-950">
+                                No doctors match the current filters
+                              </h3>
+                              <p className="mt-3 text-sm leading-6 text-slate-600">
+                                Try clearing the search or selecting a different speciality.
+                              </p>
                             </div>
-                          </article>
-                        );
-                      })}
+                          ) : (
+                            <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                              {filteredPatientDoctors.map((doctor) => {
+                                const doctorId = doctor._id ?? "";
+                                const avatarSrc = getDoctorAvatarSrc(doctor);
+                                const doctorHref = doctorId ? `/doctors/${doctorId}` : "/doctors";
+
+                                return (
+                                  <Link
+                                    key={doctorId || `${typeof doctor.userId === "string" ? doctor.userId : doctor.userId?.email}-${doctor.specialization}`}
+                                    href={doctorHref}
+                                    className="group block h-full cursor-pointer"
+                                    aria-label={`Open ${formatDoctorName(doctor)} details`}
+                                  >
+                                    <article className="h-full overflow-hidden rounded-3xl border border-white bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] transition group-hover:-translate-y-0.5 group-hover:shadow-[0_18px_42px_rgba(15,23,42,0.08)]">
+                                      <div className="bg-gradient-to-br from-slate-50 via-white to-sky-50 p-3">
+                                        <div className="flex h-44 items-center justify-center overflow-hidden rounded-[1.25rem] bg-white sm:h-48">
+                                          {avatarSrc ? (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img
+                                              src={avatarSrc}
+                                              alt={formatDoctorName(doctor)}
+                                              className="h-full w-full object-contain object-center p-2"
+                                            />
+                                          ) : (
+                                            <div className="flex h-full w-full items-center justify-center">
+                                              <div className="grid size-20 place-items-center rounded-[1.5rem] bg-gradient-to-br from-blue-600 to-cyan-500 text-2xl font-semibold text-white shadow-[0_16px_36px_rgba(37,99,235,0.2)]">
+                                                {getDoctorInitials(doctor)}
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      <div className="space-y-4 p-5">
+                                        <div className="flex items-start justify-between gap-3">
+                                          <div className="min-w-0">
+                                            <p className="truncate text-lg font-semibold tracking-tight text-slate-950">
+                                              {formatDoctorName(doctor)}
+                                            </p>
+                                            <p className="mt-1 truncate text-sm text-slate-500">
+                                              {doctor.specialization ?? "General Practice"}
+                                            </p>
+                                          </div>
+                                          <span
+                                            className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${
+                                              doctor.isAvailable ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"
+                                            }`}
+                                          >
+                                            {doctor.isAvailable ? "Available" : "Unavailable"}
+                                          </span>
+                                        </div>
+
+                                        <div className="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-2.5 text-sm font-semibold !text-white shadow-sm transition group-hover:bg-blue-700">
+                                          Book now
+                                        </div>
+                                      </div>
+                                    </article>
+                                  </Link>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
-                      )}
+                      </div>
                     </>
                   )}
                 </>

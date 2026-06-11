@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowRight, CircleAlert, Stethoscope } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, ArrowRight, CircleAlert, Stethoscope } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { requestJson } from "@/lib/api-client";
@@ -39,6 +40,8 @@ function getDoctorInitials(doctor: DoctorRecord) {
 }
 
 export function DoctorsPage() {
+  const router = useRouter();
+
   const [state, setState] = useState<DoctorsPageState>({
     doctors: [],
     isLoading: true,
@@ -162,9 +165,19 @@ export function DoctorsPage() {
         <div className="rounded-[2rem] border border-slate-200/80 bg-white/90 p-6 shadow-[0_18px_60px_rgba(15,23,42,0.06)] backdrop-blur sm:p-8">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl">
-              <div className="inline-flex items-center gap-2 rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-sm font-medium text-sky-700">
-                <Stethoscope className="size-3.5" />
-                Approved doctors
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => router.push("/patient?section=Doctors")}
+                  className="inline-flex items-center gap-2 rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-sm font-medium text-sky-700 transition hover:bg-sky-100 hover:text-sky-800"
+                >
+                  <ArrowLeft className="size-3.5" />
+                  Back
+                </button>
+                <div className="inline-flex items-center gap-2 rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-sm font-medium text-sky-700">
+                  <Stethoscope className="size-3.5" />
+                  Approved doctors
+                </div>
               </div>
               <h1 className="mt-4 text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
                 Approved doctors
