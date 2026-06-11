@@ -87,14 +87,66 @@ function getUserInitials(name?: string) {
 
 /* ---------------- NAV ---------------- */
 export function Nav() {
+  const router = useRouter();
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const accountRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const on = () => setScrolled(window.scrollY > 20);
     on();
     window.addEventListener("scroll", on);
     return () => window.removeEventListener("scroll", on);
   }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadSession() {
+      try {
+        const response = await getCurrentUser();
+        if (!active) {
+          return;
+        }
+
+        setUser(response.data ?? null);
+      } catch {
+        if (active) {
+          setUser(null);
+        }
+      } finally {
+        if (active) {
+          setAuthReady(true);
+        }
+      }
+    }
+
+    void loadSession();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    function handleDocumentClick(event: MouseEvent) {
+      if (accountRef.current && !accountRef.current.contains(event.target as Node)) {
+        setAccountOpen(false);
+      }
+    }
+
+    document.addEventListener("click", handleDocumentClick);
+    return () => document.removeEventListener("click", handleDocumentClick);
+  }, []);
+
+  useEffect(() => {
+    if (!open) {
+      setAccountOpen(false);
+    }
+  }, [open]);
+
   const links: { label: string; to: string }[] = [
     { label: "Platform", to: "#home" },
     { label: "Features", to: "#features" },
@@ -102,6 +154,24 @@ export function Nav() {
     { label: "Pricing", to: "#pricing" },
     { label: "Resources", to: "#resources" },
   ];
+
+  const avatarSrc = getUserAvatarSrc(user);
+  const dashboardHref = getDashboardHref(user?.role);
+  const profileHref = getProfileHref(user?.role);
+  const appointmentsHref = getAppointmentsHref(user?.role);
+
+  async function handleLogout() {
+    try {
+      await logoutUser();
+    } finally {
+      setAccountOpen(false);
+      setOpen(false);
+      setUser(null);
+      router.push("/");
+      router.refresh();
+    }
+  }
+
   return (
     <motion.header
       initial={{ y: -20, opacity: 0 }}
@@ -127,12 +197,92 @@ export function Nav() {
           ))}
         </ul>
         <div className="hidden md:flex items-center gap-3">
-          <Link href="/login" className="text-sm font-medium px-4 py-2 rounded-full hover:bg-secondary transition">
-            Sign In
-          </Link>
-          <Link href="/register" className="inline-flex h-12 items-center justify-center rounded-full bg-blue-600 px-6 text-sm font-semibold !text-white hover:!text-white hover:bg-blue-700 shadow-[0_14px_30px_rgba(37,99,235,0.22)] [&_*]:!text-white transition">
-            Get Started
-          </Link>
+          {!authReady ? null : user ? (
+            <div className="relative" ref={accountRef}>
+              <button
+                type="button"
+                onClick={() => setAccountOpen((current) => !current)}
+                className="flex items-center gap-3 rounded-full border border-slate-200 bg-white px-2 py-1.5 shadow-[0_10px_24px_rgba(15,23,42,0.06)] transition hover:bg-slate-50"
+                aria-haspopup="menu"
+                aria-expanded={accountOpen}
+              >
+                <div className="grid size-9 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-blue-600 to-cyan-500 text-sm font-semibold text-white">
+                  {avatarSrc ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={avatarSrc} alt={user.name} className="size-full object-cover" />
+                  ) : (
+                    <span>{getUserInitials(user.name)}</span>
+                  )}
+                </div>
+                <div className="hidden text-left lg:block">
+                  <p className="max-w-[160px] truncate text-sm font-semibold text-slate-950">{user.name}</p>
+                  <p className="max-w-[160px] truncate text-xs text-slate-500">{user.role.replace("_", " ")}</p>
+                </div>
+                <ChevronDown className={`size-4 text-slate-500 transition ${accountOpen ? "rotate-180" : ""}`} />
+              </button>
+
+              {accountOpen ? (
+                <div className="absolute right-0 top-[calc(100%+0.75rem)] z-50 w-72 rounded-[1.5rem] border border-slate-200 bg-white p-2 shadow-[0_24px_60px_rgba(15,23,42,0.16)]">
+                  <div className="rounded-[1.25rem] bg-slate-50 px-4 py-4">
+                    <div className="flex items-center gap-3">
+                      <div className="grid size-11 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-blue-600 to-cyan-500 text-sm font-semibold text-white">
+                        {avatarSrc ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={avatarSrc} alt={user.name} className="size-full object-cover" />
+                        ) : (
+                          <span>{getUserInitials(user.name)}</span>
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-950">{user.name}</p>
+                        <p className="truncate text-xs text-slate-500">{user.email}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-2 space-y-1">
+                    <Link
+                      href={dashboardHref}
+                      onClick={() => setAccountOpen(false)}
+                      className="flex items-center rounded-2xl px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:text-slate-950"
+                    >
+                      Dashboard
+                    </Link>
+                    <Link
+                      href={profileHref}
+                      onClick={() => setAccountOpen(false)}
+                      className="flex items-center rounded-2xl px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:text-slate-950"
+                    >
+                      My Profile
+                    </Link>
+                    <Link
+                      href={appointmentsHref}
+                      onClick={() => setAccountOpen(false)}
+                      className="flex items-center rounded-2xl px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:text-slate-950"
+                    >
+                      My Appointments
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="flex w-full items-center rounded-2xl px-4 py-3 text-left text-sm font-medium text-rose-700 transition hover:bg-rose-50"
+                    >
+                      Logout
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <>
+              <Link href="/login" className="text-sm font-medium px-4 py-2 rounded-full hover:bg-secondary transition">
+                Sign In
+              </Link>
+              <Link href="/register" className="inline-flex h-12 items-center justify-center rounded-full bg-blue-600 px-6 text-sm font-semibold !text-white hover:!text-white hover:bg-blue-700 shadow-[0_14px_30px_rgba(37,99,235,0.22)] [&_*]:!text-white transition">
+                Get Started
+              </Link>
+            </>
+          )}
         </div>
         <button className="md:hidden" onClick={() => setOpen(!open)} aria-label="Menu">
           {open ? <X className="size-6" /> : <Menu className="size-6" />}
@@ -152,9 +302,47 @@ export function Nav() {
                   {l.label}
                 </a>
               ))}
-              <Link href="/register" onClick={() => setOpen(false)} className="inline-flex h-12 items-center justify-center rounded-full bg-blue-600 px-6 text-sm font-semibold !text-white text-center hover:!text-white hover:bg-blue-700 [&_*]:!text-white">
-                Get Started
-              </Link>
+              {!authReady ? null : user ? (
+                <div className="mt-2 rounded-[1.25rem] border border-slate-200 bg-white p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="grid size-11 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-blue-600 to-cyan-500 text-sm font-semibold text-white">
+                      {avatarSrc ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={avatarSrc} alt={user.name} className="size-full object-cover" />
+                      ) : (
+                        <span>{getUserInitials(user.name)}</span>
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-slate-950">{user.name}</p>
+                      <p className="truncate text-xs text-slate-500">{user.email}</p>
+                    </div>
+                  </div>
+                  <div className="mt-4 grid gap-2">
+                    <Link href={dashboardHref} onClick={() => setOpen(false)} className="rounded-2xl bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700">
+                      Dashboard
+                    </Link>
+                    <Link href={profileHref} onClick={() => setOpen(false)} className="rounded-2xl bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700">
+                      My Profile
+                    </Link>
+                    <Link href={appointmentsHref} onClick={() => setOpen(false)} className="rounded-2xl bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700">
+                      My Appointments
+                    </Link>
+                    <button type="button" onClick={handleLogout} className="rounded-2xl bg-rose-50 px-4 py-3 text-left text-sm font-medium text-rose-700">
+                      Logout
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid gap-3 pt-1">
+                  <Link href="/login" onClick={() => setOpen(false)} className="inline-flex h-12 items-center justify-center rounded-full border border-slate-200 bg-white px-6 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                    Sign In
+                  </Link>
+                  <Link href="/register" onClick={() => setOpen(false)} className="inline-flex h-12 items-center justify-center rounded-full bg-blue-600 px-6 text-sm font-semibold !text-white text-center hover:!text-white hover:bg-blue-700 [&_*]:!text-white">
+                    Get Started
+                  </Link>
+                </div>
+              )}
             </div>
           </motion.div>
         )}
