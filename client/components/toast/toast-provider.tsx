@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { CheckCircle2, CircleAlert, Info, TriangleAlert, X } from "lucide-react";
+import { CheckCircle2, CircleAlert, Info, Loader2, TriangleAlert, X } from "lucide-react";
 
 import { TOAST_EVENT_NAME, createToastRecord, type ToastRecord, type ToastVariant } from "@/lib/toast";
 import { cn } from "@/lib/utils";
@@ -35,6 +35,15 @@ function getToastStyle(variant: ToastVariant) {
         icon: TriangleAlert,
         iconClassName: "text-amber-600",
       };
+    case "loading":
+      return {
+        container: "border-sky-200 bg-white",
+        accent: "bg-sky-500",
+        title: "text-slate-950",
+        message: "text-slate-600",
+        icon: Loader2,
+        iconClassName: "text-sky-600 animate-spin",
+      };
     default:
       return {
         container: "border-sky-200 bg-white",
@@ -66,12 +75,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       const record = createToastRecord(input);
       setToasts((current) => [record, ...current].slice(0, 4));
 
-      const timer = window.setTimeout(() => {
-        setToasts((current) => current.filter((toast) => toast.id !== record.id));
-        timersRef.current.delete(record.id);
-      }, record.duration);
+      if (record.duration > 0) {
+        const timer = window.setTimeout(() => {
+          setToasts((current) => current.filter((toast) => toast.id !== record.id));
+          timersRef.current.delete(record.id);
+        }, record.duration);
 
-      timersRef.current.set(record.id, timer);
+        timersRef.current.set(record.id, timer);
+      }
     }
 
     window.addEventListener(TOAST_EVENT_NAME, handleToast);
@@ -97,7 +108,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <>
       {children}
 
-      <div className="pointer-events-none fixed right-4 top-4 z-[120] flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-3">
+      <div className="pointer-events-none fixed right-4 top-24 z-[200] flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-3 sm:top-28 lg:top-32">
         {toasts.map((toast) => {
           const style = getToastStyle(toast.variant);
           const Icon = style.icon;
@@ -106,29 +117,31 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             <div
               key={toast.id}
               className={cn(
-                "pointer-events-auto overflow-hidden rounded-[1.5rem] border bg-white shadow-[0_18px_50px_rgba(15,23,42,0.15)]",
+                "pointer-events-auto overflow-hidden rounded-[1.5rem] border bg-white shadow-[0_18px_50px_rgba(15,23,42,0.18)]",
                 style.container,
               )}
             >
               <div className={cn("h-1.5 w-full", style.accent)} />
-              <div className="flex items-start gap-3 px-4 py-3">
-                <div className={cn("mt-0.5 grid size-9 shrink-0 place-items-center rounded-full bg-slate-50", style.iconClassName)}>
+              <div className="flex items-start gap-3 px-4 py-4">
+                <div className={cn("mt-0.5 grid size-10 shrink-0 place-items-center rounded-full bg-slate-50", style.iconClassName)}>
                   <Icon className="size-5" />
                 </div>
 
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-3">
-                    <p className={cn("truncate text-sm font-semibold", style.title)}>{toast.title}</p>
+                    <div className="min-w-0 flex-1">
+                      <p className={cn("truncate text-sm font-semibold leading-5", style.title)}>{toast.title}</p>
+                      <p className={cn("mt-1 text-sm leading-5", style.message)}>{toast.message}</p>
+                    </div>
                     <button
                       type="button"
                       onClick={() => dismissToast(toast.id)}
-                      className="grid size-7 shrink-0 place-items-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                      className="mt-[-2px] grid size-8 shrink-0 place-items-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
                       aria-label="Dismiss notification"
                     >
                       <X className="size-4" />
                     </button>
                   </div>
-                  <p className={cn("mt-1 text-sm leading-5", style.message)}>{toast.message}</p>
                 </div>
               </div>
             </div>

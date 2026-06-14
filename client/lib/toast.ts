@@ -1,4 +1,4 @@
-export type ToastVariant = "success" | "error" | "info" | "warning";
+export type ToastVariant = "success" | "error" | "info" | "warning" | "loading";
 
 export type ToastInput = {
   title?: string;
@@ -30,12 +30,28 @@ export function emitToast(input: ToastInput) {
 
 export function createToastRecord(input: ToastInput): ToastRecord {
   const variant = input.variant ?? "info";
+  const duration = input.duration ?? getDefaultToastDuration(variant);
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     title: input.title?.trim() || variant.charAt(0).toUpperCase() + variant.slice(1),
     message: input.message,
     variant,
-    duration: input.duration ?? 4200,
+    duration,
   };
 }
 
+function getDefaultToastDuration(variant: ToastVariant) {
+  switch (variant) {
+    case "success":
+    case "info":
+      return 3000;
+    case "warning":
+      return 4000;
+    case "error":
+      return 5000;
+    case "loading":
+      return 0;
+    default:
+      return 3000;
+  }
+}
