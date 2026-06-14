@@ -70,6 +70,32 @@ type DoctorDetailRecord = {
   profileStatus?: "pending" | "approved" | "rejected" | string;
   isPublic?: boolean;
   isAvailable?: boolean;
+  pendingProfileUpdate?: {
+    status?: "pending" | "approved" | "rejected" | string;
+    requestedAt?: string;
+    requestedBy?:
+      | {
+          name?: string;
+          email?: string;
+        }
+      | string;
+    changes?: {
+      user?: {
+        name?: string;
+        email?: string;
+        phone?: string;
+        avatar?: string;
+      };
+      doctor?: {
+        specialization?: string;
+        qualification?: string;
+        address?: string;
+        experienceYears?: number;
+        consultationFee?: number;
+        bio?: string;
+      };
+    };
+  } | null;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -142,6 +168,18 @@ function formatTime(value?: string) {
   }
 
   return value.slice(0, 5);
+}
+
+function formatProfileValue(value?: string | number | null) {
+  if (value === null || value === undefined) {
+    return "Not provided";
+  }
+
+  if (typeof value === "number") {
+    return value.toString();
+  }
+
+  return value.trim() || "Not provided";
 }
 
 function formatScheduleLabel(record: AvailabilityRecord) {
@@ -289,7 +327,8 @@ export function DoctorManagementPage({
   }
 
   const statusMeta = doctorStatusMeta(doctor?.profileStatus, doctor?.isPublic);
-  const isPendingDoctor = doctor?.profileStatus === "pending";
+  const hasPendingProfileUpdate = doctor?.pendingProfileUpdate?.status === "pending";
+  const isPendingDoctor = doctor?.profileStatus === "pending" && !hasPendingProfileUpdate;
   const activeSectionLabel = isPendingDoctor ? "Doctor Approvals" : "Doctors";
   const returnHref = `${basePath}?section=${encodeURIComponent(activeSectionLabel)}`;
   const avatarUrl = getDoctorAvatarUrl(doctor);
@@ -425,7 +464,7 @@ export function DoctorManagementPage({
                 </p>
               </div>
 
-              {isPendingDoctor ? (
+              {isPendingDoctor || hasPendingProfileUpdate ? (
                 <div className="flex flex-wrap gap-3">
                   <button
                     type="button"
@@ -433,8 +472,8 @@ export function DoctorManagementPage({
                     disabled={isSavingAction}
                     className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-3 text-sm font-semibold !text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70"
                     style={{ color: "#ffffff" }}
-                  >
-                    {isSavingAction ? "Updating..." : "Approve"}
+                    >
+                    {isSavingAction ? "Updating..." : hasPendingProfileUpdate ? "Approve update" : "Approve"}
                   </button>
                   <button
                     type="button"
@@ -442,7 +481,7 @@ export function DoctorManagementPage({
                     disabled={isSavingAction}
                     className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-70"
                   >
-                    Reject
+                    {hasPendingProfileUpdate ? "Reject update" : "Reject"}
                   </button>
                   <button
                     type="button"
@@ -513,6 +552,49 @@ export function DoctorManagementPage({
               </Card>
 
               <div className="grid gap-4">
+                {hasPendingProfileUpdate ? (
+                  <div className="rounded-[1.75rem] border border-amber-200 bg-amber-50/80 p-5 shadow-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-amber-700">Pending profile update</p>
+                        <p className="mt-2 text-sm leading-6 text-amber-900">
+                          The doctor submitted changes that are waiting for review. The live profile stays unchanged until approved.
+                        </p>
+                      </div>
+                      <span className="rounded-full border border-amber-200 bg-white px-3 py-1 text-xs font-semibold text-amber-700">
+                        Waiting review
+                      </span>
+                    </div>
+
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      <div className="rounded-2xl bg-white px-4 py-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Current live profile</p>
+                        <div className="mt-3 space-y-2 text-sm text-slate-700">
+                          <p><span className="font-semibold text-slate-900">Name:</span> {resolveDoctorName(doctor as never)}</p>
+                          <p><span className="font-semibold text-slate-900">Email:</span> {typeof doctor.userId === "string" ? "Not available" : doctor.userId?.email ?? "Not available"}</p>
+                          <p><span className="font-semibold text-slate-900">Phone:</span> {typeof doctor.userId === "string" ? "Not available" : doctor.userId?.phone ?? "Not available"}</p>
+                          <p><span className="font-semibold text-slate-900">Specialization:</span> {doctor.specialization ?? "General Practice"}</p>
+                          <p><span className="font-semibold text-slate-900">Qualification:</span> {doctor.qualification ?? "Not listed"}</p>
+                          <p><span className="font-semibold text-slate-900">Address:</span> {doctor.address ?? "Not listed"}</p>
+                          <p><span className="font-semibold text-slate-900">Fee:</span> {formatCurrency(doctor.consultationFee)}</p>
+                        </div>
+                      </div>
+                      <div className="rounded-2xl bg-white px-4 py-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Requested changes</p>
+                        <div className="mt-3 space-y-2 text-sm text-slate-700">
+                          <p><span className="font-semibold text-slate-900">Name:</span> {formatProfileValue(doctor.pendingProfileUpdate?.changes?.user?.name ?? null)}</p>
+                          <p><span className="font-semibold text-slate-900">Email:</span> {formatProfileValue(doctor.pendingProfileUpdate?.changes?.user?.email ?? null)}</p>
+                          <p><span className="font-semibold text-slate-900">Phone:</span> {formatProfileValue(doctor.pendingProfileUpdate?.changes?.user?.phone ?? null)}</p>
+                          <p><span className="font-semibold text-slate-900">Specialization:</span> {formatProfileValue(doctor.pendingProfileUpdate?.changes?.doctor?.specialization ?? null)}</p>
+                          <p><span className="font-semibold text-slate-900">Qualification:</span> {formatProfileValue(doctor.pendingProfileUpdate?.changes?.doctor?.qualification ?? null)}</p>
+                          <p><span className="font-semibold text-slate-900">Address:</span> {formatProfileValue(doctor.pendingProfileUpdate?.changes?.doctor?.address ?? null)}</p>
+                          <p><span className="font-semibold text-slate-900">Fee:</span> {formatProfileValue(doctor.pendingProfileUpdate?.changes?.doctor?.consultationFee ?? null)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
                 <div className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
                   <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Profile details</p>
                   <div className="mt-4 grid gap-3 md:grid-cols-2">

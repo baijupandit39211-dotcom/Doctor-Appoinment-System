@@ -82,6 +82,7 @@ type AppointmentRecord = {
       name?: string;
       email?: string;
       phone?: string;
+      avatar?: string;
     };
   } | string;
   doctorId?: {
@@ -104,12 +105,40 @@ type NotificationRecord = {
 
 type DoctorRecord = {
   _id?: string;
+  pendingProfileUpdate?: {
+    status?: "pending" | "approved" | "rejected" | string;
+    requestedAt?: string;
+    requestedBy?:
+      | {
+          name?: string;
+          email?: string;
+        }
+      | string;
+    changes?: {
+      user?: {
+        name?: string;
+        email?: string;
+        phone?: string;
+        avatar?: string;
+      };
+      doctor?: {
+        specialization?: string;
+        qualification?: string;
+        address?: string;
+        experienceYears?: number;
+        consultationFee?: number;
+        bio?: string;
+      };
+    };
+  } | null;
   specialization?: string;
   profileStatus?: "pending" | "approved" | "rejected" | string;
   isPublic?: boolean;
   consultationFee?: number;
   experienceYears?: number;
   bio?: string;
+  qualification?: string;
+  address?: string;
   isAvailable?: boolean;
   clinicId?:
     | {
@@ -122,6 +151,7 @@ type DoctorRecord = {
     | {
         name?: string;
         email?: string;
+        phone?: string;
         avatar?: string;
       }
     | string;
@@ -148,6 +178,19 @@ type PatientRecord = {
         avatar?: string;
       }
     | string;
+};
+
+type DoctorProfileFormState = {
+  avatar: string;
+  name: string;
+  email: string;
+  phone: string;
+  specialization: string;
+  qualification: string;
+  address: string;
+  experienceYears: string;
+  consultationFee: string;
+  bio: string;
 };
 
 type DepartmentRecord = {
@@ -226,6 +269,22 @@ const rolePathMap: Record<AuthRole, string> = {
 
 function formatCount(value: number) {
   return value.toLocaleString();
+}
+
+function formatCurrency(value?: number | null) {
+  if (typeof value !== "number") {
+    return "On request";
+  }
+
+  return `NPR ${new Intl.NumberFormat("en-NP").format(value)}`;
+}
+
+function formatExperience(value?: number | null) {
+  if (typeof value !== "number") {
+    return "Not listed";
+  }
+
+  return `${value} year${value === 1 ? "" : "s"} experience`;
 }
 
 function parseCount(value?: string) {
@@ -542,6 +601,93 @@ function formatAppointmentPatientContact(patient?: AppointmentRecord["patientId"
   }
 
   return patient.userId?.phone ?? patient.userId?.email ?? "Contact unavailable";
+}
+
+function getAppointmentPatientAvatarSrc(patient?: AppointmentRecord["patientId"]) {
+  if (!patient || typeof patient === "string") {
+    return "";
+  }
+
+  const avatar = patient.userId?.avatar?.trim();
+  if (!avatar) {
+    return "";
+  }
+
+  if (avatar.startsWith("data:") || avatar.startsWith("http://") || avatar.startsWith("https://")) {
+    return avatar;
+  }
+
+  return avatar.startsWith("/") ? `${API_BASE_URL}${avatar}` : `${API_BASE_URL}/${avatar}`;
+}
+
+function getAppointmentPatientInitials(patient?: AppointmentRecord["patientId"]) {
+  const name = formatAppointmentPatient(patient).trim();
+
+  if (!name) {
+    return "P";
+  }
+
+  return name
+    .split(/\s+/)
+    .map((part) => part[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+}
+
+function buildDoctorPatients(appointments: AppointmentRecord[]) {
+  const groupedPatients = new Map<
+    string,
+    {
+      patient: AppointmentRecord["patientId"];
+      appointments: AppointmentRecord[];
+    }
+  >();
+
+  appointments.forEach((appointment, index) => {
+    const patientKey =
+      typeof appointment.patientId === "string"
+        ? appointment.patientId
+        : `${formatAppointmentPatient(appointment.patientId)}-${formatAppointmentPatientContact(appointment.patientId)}-${index}`;
+    const existingGroup = groupedPatients.get(patientKey);
+
+    if (existingGroup) {
+      existingGroup.appointments.push(appointment);
+      return;
+    }
+
+    groupedPatients.set(patientKey, {
+      patient: appointment.patientId,
+      appointments: [appointment],
+    });
+  });
+
+  return [...groupedPatients.entries()]
+    .map(([key, group]) => {
+      const sortedAppointments = [...group.appointments].sort((left, right) => {
+        const leftTime = new Date(`${left.appointmentDate ?? ""}T${left.startTime ?? "00:00"}:00`).getTime();
+        const rightTime = new Date(`${right.appointmentDate ?? ""}T${right.startTime ?? "00:00"}:00`).getTime();
+        return rightTime - leftTime;
+      });
+      const latestAppointment = sortedAppointments[0];
+      const latestAppointmentTime = latestAppointment
+        ? new Date(`${latestAppointment.appointmentDate ?? ""}T${latestAppointment.startTime ?? "00:00"}:00`).getTime()
+        : 0;
+
+      return {
+        key,
+        patient: group.patient,
+        appointmentCount: group.appointments.length,
+        name: formatAppointmentPatient(group.patient),
+        contact: formatAppointmentPatientContact(group.patient),
+        avatarSrc: getAppointmentPatientAvatarSrc(group.patient),
+        initials: getAppointmentPatientInitials(group.patient),
+        lastAppointmentLabel: formatAppointmentDate(latestAppointment?.appointmentDate),
+        lastStatusMeta: appointmentStatusMeta(latestAppointment?.status),
+        lastAppointmentTime: latestAppointmentTime,
+      };
+    })
+    .sort((left, right) => right.lastAppointmentTime - left.lastAppointmentTime || left.name.localeCompare(right.name));
 }
 
 function sortNotifications(notifications: NotificationRecord[]) {
@@ -1604,6 +1750,22 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
     dateOfBirth: "",
     address: "",
   });
+  const [doctorProfileMessage, setDoctorProfileMessage] = useState("");
+  const [doctorProfileError, setDoctorProfileError] = useState("");
+  const [isEditingDoctorProfile, setIsEditingDoctorProfile] = useState(false);
+  const [isSavingDoctorProfile, setIsSavingDoctorProfile] = useState(false);
+  const [doctorProfileForm, setDoctorProfileForm] = useState<DoctorProfileFormState>({
+    avatar: "",
+    name: "",
+    email: "",
+    phone: "",
+    specialization: "",
+    qualification: "",
+    address: "",
+    experienceYears: "",
+    consultationFee: "",
+    bio: "",
+  });
 
   useEffect(() => {
     let active = true;
@@ -1677,7 +1839,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
     const defaultSection = sectionNavItems[0]?.label ?? "Overview";
     const initialSection = sectionNavItems.some((item) => item.label === sectionParam) ? sectionParam : defaultSection;
     setActiveSection(initialSection);
-  }, [config.expectedRole, sectionNavItems]);
+  }, [config.expectedRole]);
 
   useEffect(() => {
     if (!content?.patientProfile || isEditingPatientProfile) {
@@ -1706,6 +1868,26 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
       );
     }
   }, [content?.doctorProfileId, user?.role]);
+
+  useEffect(() => {
+    const doctorProfile = content?.doctorProfile;
+    if (!doctorProfile || isEditingDoctorProfile) {
+      return;
+    }
+
+    setDoctorProfileForm({
+      avatar: getDoctorAvatarSrc(doctorProfile),
+      name: typeof doctorProfile.userId === "string" ? "" : doctorProfile.userId?.name ?? "",
+      email: typeof doctorProfile.userId === "string" ? "" : doctorProfile.userId?.email ?? "",
+      phone: typeof doctorProfile.userId === "string" ? "" : doctorProfile.userId?.phone ?? "",
+      specialization: doctorProfile.specialization ?? "General Practice",
+      qualification: doctorProfile.qualification ?? "",
+      address: doctorProfile.address ?? "",
+      experienceYears: doctorProfile.experienceYears != null ? String(doctorProfile.experienceYears) : "0",
+      consultationFee: doctorProfile.consultationFee != null ? String(doctorProfile.consultationFee) : "0",
+      bio: doctorProfile.bio ?? "",
+    });
+  }, [content?.doctorProfile, isEditingDoctorProfile]);
 
   useEffect(() => {
     if (!content?.availability) {
@@ -2001,6 +2183,106 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
       );
     } finally {
       setIsSavingPatientProfile(false);
+    }
+  }
+
+  function resetDoctorProfileForm() {
+    const doctorProfile = content?.doctorProfile;
+
+    setDoctorProfileForm({
+      avatar: getDoctorAvatarSrc(doctorProfile),
+      name: typeof doctorProfile?.userId === "string" ? "" : doctorProfile?.userId?.name ?? "",
+      email: typeof doctorProfile?.userId === "string" ? "" : doctorProfile?.userId?.email ?? "",
+      phone: typeof doctorProfile?.userId === "string" ? "" : doctorProfile?.userId?.phone ?? "",
+      specialization: doctorProfile?.specialization ?? "General Practice",
+      qualification: doctorProfile?.qualification ?? "",
+      address: doctorProfile?.address ?? "",
+      experienceYears: doctorProfile?.experienceYears != null ? String(doctorProfile.experienceYears) : "0",
+      consultationFee: doctorProfile?.consultationFee != null ? String(doctorProfile.consultationFee) : "0",
+      bio: doctorProfile?.bio ?? "",
+    });
+  }
+
+  function openDoctorProfileEdit() {
+    resetDoctorProfileForm();
+    setDoctorProfileMessage("");
+    setDoctorProfileError("");
+    setIsEditingDoctorProfile(true);
+  }
+
+  function cancelDoctorProfileEdit() {
+    resetDoctorProfileForm();
+    setDoctorProfileMessage("");
+    setDoctorProfileError("");
+    setIsEditingDoctorProfile(false);
+  }
+
+  async function handleDoctorProfileAvatarChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      const avatarUrl = await uploadDoctorAvatar(file);
+      setDoctorProfileForm((current) => ({ ...current, avatar: avatarUrl }));
+    } catch (uploadError) {
+      setDoctorProfileError(uploadError instanceof Error ? uploadError.message : "Failed to load image");
+    } finally {
+      event.target.value = "";
+    }
+  }
+
+  async function handleDoctorProfileSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!user || !content?.doctorProfileId) {
+      return;
+    }
+
+    setDoctorProfileMessage("");
+    setDoctorProfileError("");
+    setIsSavingDoctorProfile(true);
+
+    try {
+      const response = await requestJson<DoctorRecord>(`/api/doctors/${content.doctorProfileId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          avatar: doctorProfileForm.avatar.trim() || undefined,
+          name: doctorProfileForm.name.trim(),
+          email: doctorProfileForm.email.trim(),
+          phone: doctorProfileForm.phone.trim(),
+          specialization: doctorProfileForm.specialization.trim(),
+          qualification: doctorProfileForm.qualification.trim(),
+          address: doctorProfileForm.address.trim(),
+          experienceYears: Number(doctorProfileForm.experienceYears || 0),
+          consultationFee: Number(doctorProfileForm.consultationFee || 0),
+          bio: doctorProfileForm.bio.trim(),
+        }),
+      });
+
+      setContent((current) =>
+        current
+          ? {
+              ...current,
+              doctorProfile: response.data ?? current.doctorProfile,
+              doctorProfileStatus: response.data?.profileStatus ?? current.doctorProfileStatus,
+            }
+          : current,
+      );
+      setDoctorProfileMessage(
+        user.role === "doctor"
+          ? "Your profile update has been submitted for admin review."
+          : "Doctor profile updated successfully.",
+      );
+      setIsEditingDoctorProfile(false);
+      await refreshDashboardContent(user);
+    } catch (profileUpdateError) {
+      setDoctorProfileError(
+        profileUpdateError instanceof Error ? profileUpdateError.message : "Failed to update doctor profile",
+      );
+    } finally {
+      setIsSavingDoctorProfile(false);
     }
   }
 
@@ -2651,6 +2933,8 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
     return sortedDoctors;
   }, [content?.doctors, patientDoctorsSearchQuery, patientDoctorsSortBy, patientDoctorsSpeciality, user?.role]);
 
+  const doctorPatients = buildDoctorPatients(content?.appointments ?? []);
+
   if (isLoading) {
     return (
       <main className="min-h-screen bg-slate-50 px-6 py-10 text-slate-900">
@@ -2725,7 +3009,6 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
     (doctorProfileCompletionItems.filter((item) => item.complete).length / doctorProfileCompletionItems.length) * 100,
   );
   const viewPublicProfileHref = content.doctorProfileId ? `/doctors/${content.doctorProfileId}` : "/doctor?section=Availability";
-
     return (
       <DashboardShell
           roleLabel={config.roleLabel}
@@ -3293,274 +3576,366 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Profile</p>
-                          <h2 className="mt-2 text-[1.9rem] font-semibold tracking-tight text-slate-950">Your patient profile</h2>
+                          <h2 className="mt-2 text-[1.9rem] font-semibold tracking-tight text-slate-950">Your doctor profile</h2>
                           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                            Review and update your personal details, profile photo, and contact information.
+                            Review your profile details, uploaded photo, and public status. Profile edits go to admin review first.
                           </p>
                         </div>
                         <button
                           type="button"
-                          onClick={isEditingPatientProfile ? cancelPatientProfileEdit : openPatientProfileEdit}
+                          onClick={isEditingDoctorProfile ? cancelDoctorProfileEdit : openDoctorProfileEdit}
                           className={`inline-flex items-center justify-center rounded-full px-5 py-3 text-sm font-semibold transition ${
-                            isEditingPatientProfile
+                            isEditingDoctorProfile
                               ? "border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
                               : "bg-blue-600 text-white hover:bg-blue-700"
                           }`}
-                          style={!isEditingPatientProfile ? { color: "#ffffff" } : undefined}
+                          style={!isEditingDoctorProfile ? { color: "#ffffff" } : undefined}
                         >
-                          {isEditingPatientProfile ? "Cancel edit" : "Edit Profile"}
+                          {isEditingDoctorProfile ? "Cancel edit" : "Edit Profile"}
                         </button>
                       </div>
 
-                      {patientProfileMessage ? (
+                      {doctorProfileMessage ? (
                         <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                          {patientProfileMessage}
+                          {doctorProfileMessage}
                         </div>
                       ) : null}
 
-                      {patientProfileError || content.patientProfileError ? (
+                      {doctorProfileError || content.doctorProfileError ? (
                         <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                          {patientProfileError || content.patientProfileError}
+                          {doctorProfileError || content.doctorProfileError}
                         </div>
                       ) : null}
 
-                      {content.patientProfileError ? (
-                        <div className="mt-6 rounded-3xl border border-dashed border-red-200 bg-red-50 px-6 py-10 text-center">
-                          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-red-600">Profile error</p>
-                          <h3 className="mt-3 text-xl font-semibold tracking-tight text-slate-950">
-                            Unable to load your profile
-                          </h3>
-                          <p className="mt-3 text-sm leading-6 text-slate-600">{content.patientProfileError}</p>
-                        </div>
-                      ) : content.patientProfile === undefined ? (
+                      {content.doctorProfile === undefined ? (
                         <div className="mt-6 rounded-3xl border border-slate-200 bg-slate-50 px-6 py-10 text-center">
                           <div className="mx-auto size-10 animate-spin rounded-full border-4 border-slate-200 border-t-slate-950" />
                           <p className="mt-4 text-sm font-medium text-slate-600">Loading profile...</p>
                         </div>
+                      ) : !content.doctorProfile ? (
+                        <div className="mt-6 rounded-3xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center">
+                          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Profile unavailable</p>
+                          <h3 className="mt-3 text-xl font-semibold tracking-tight text-slate-950">Doctor profile not found</h3>
+                          <p className="mt-3 text-sm leading-6 text-slate-600">Your doctor profile is not ready yet.</p>
+                        </div>
                       ) : (
-                        <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-                          <div className="rounded-[1.75rem] border border-slate-200 bg-slate-50/80 p-5 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
-                            <div className="rounded-[1.5rem] border border-white bg-white p-5">
-                              <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-center sm:text-left">
-                                <div className="flex size-28 shrink-0 items-center justify-center overflow-hidden rounded-[1.75rem] border border-slate-200 bg-slate-50">
-                                  {patientProfileForm.avatar.trim() ? (
-                                    // eslint-disable-next-line @next/next/no-img-element
-                                    <img
-                                      src={patientProfileForm.avatar.trim()}
-                                      alt={formatPatientName(content.patientProfile)}
-                                      className="h-full w-full object-contain object-center p-2"
-                                    />
-                                  ) : (
-                                    <div className="grid size-20 place-items-center rounded-[1.5rem] bg-gradient-to-br from-blue-600 to-cyan-500 text-2xl font-semibold text-white shadow-[0_16px_36px_rgba(37,99,235,0.2)]">
-                                      {getPatientInitials(content.patientProfile)}
-                                    </div>
-                                  )}
-                                </div>
-
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Account preview</p>
-                                  <h3 className="mt-2 text-[1.5rem] font-semibold tracking-tight text-slate-950">
-                                    {formatPatientName(content.patientProfile)}
-                                  </h3>
-                                  <p className="mt-2 text-sm leading-6 text-slate-600">
-                                    {typeof content.patientProfile.userId === "string"
-                                      ? "Patient account details are linked to your profile."
-                                      : content.patientProfile.userId?.email ?? "No email available"}
-                                  </p>
-                                </div>
-                              </div>
-
-                              <div className="mt-5 flex flex-wrap gap-3">
-                                <input
-                                  id="patient-profile-photo"
-                                  type="file"
-                                  accept="image/*"
-                                  onChange={handlePatientProfileAvatarChange}
-                                  className="hidden"
-                                />
-                                <label
-                                  htmlFor="patient-profile-photo"
-                                  className="inline-flex cursor-pointer items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
-                                  style={{ color: "#ffffff" }}
-                                >
-                                  {patientProfileForm.avatar.trim() ? "Replace photo" : "Upload photo"}
-                                </label>
-                                {patientProfileForm.avatar.trim() ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => setPatientProfileForm((current) => ({ ...current, avatar: "" }))}
-                                    className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
-                                  >
-                                    Remove photo
-                                  </button>
-                                ) : null}
-                              </div>
+                        <>
+                          {content.doctorProfile.pendingProfileUpdate?.status === "pending" ? (
+                            <div className="mt-6 rounded-[1.5rem] border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
+                              <p className="font-semibold">Profile update pending review</p>
+                              <p className="mt-1 leading-6">
+                                Your live profile remains unchanged until the clinic approves the requested update.
+                              </p>
                             </div>
-                          </div>
+                          ) : null}
 
-                          <div className="rounded-[1.75rem] border border-slate-200 bg-slate-50/80 p-5 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
-                            <div className="rounded-[1.5rem] border border-white bg-white p-5">
-                              <div className="flex items-start justify-between gap-3">
-                                <div>
-                                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
-                                    {isEditingPatientProfile ? "Edit profile" : "Profile details"}
-                                  </p>
-                                  <h3 className="mt-2 text-[1.35rem] font-semibold tracking-tight text-slate-950">
-                                    {isEditingPatientProfile ? "Update your information" : "Your saved profile information"}
-                                  </h3>
-                                </div>
-                              </div>
-
-                              {isEditingPatientProfile ? (
-                                <form onSubmit={handlePatientProfileSubmit} className="mt-6 space-y-4">
-                                  <div className="grid gap-4 md:grid-cols-2">
-                                    <label className="space-y-2 md:col-span-2">
-                                      <span className="text-sm font-medium text-slate-700">Full name</span>
-                                      <input
-                                        type="text"
-                                        value={patientProfileForm.name}
-                                        onChange={(event) =>
-                                          setPatientProfileForm((current) => ({ ...current, name: event.target.value }))
-                                        }
-                                        className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
-                                        required
+                          <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+                            <div className="rounded-[1.75rem] border border-slate-200 bg-slate-50/80 p-5 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
+                              <div className="rounded-[1.5rem] border border-white bg-white p-5">
+                                <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-center sm:text-left">
+                                  <div className="flex size-28 shrink-0 items-center justify-center overflow-hidden rounded-[1.75rem] border border-slate-200 bg-slate-50">
+                                    {doctorProfileForm.avatar.trim() ? (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img
+                                        src={doctorProfileForm.avatar.trim()}
+                                        alt={formatDoctorName(content.doctorProfile)}
+                                        className="h-full w-full object-contain object-center p-2"
                                       />
-                                    </label>
-
-                                    <label className="space-y-2">
-                                      <span className="text-sm font-medium text-slate-700">Phone</span>
-                                      <input
-                                        type="tel"
-                                        value={patientProfileForm.phone}
-                                        onChange={(event) =>
-                                          setPatientProfileForm((current) => ({ ...current, phone: event.target.value }))
-                                        }
-                                        className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
-                                        placeholder="Phone number"
-                                      />
-                                    </label>
-
-                                    <label className="space-y-2">
-                                      <span className="text-sm font-medium text-slate-700">Gender</span>
-                                      <select
-                                        value={patientProfileForm.gender}
-                                        onChange={(event) =>
-                                          setPatientProfileForm((current) => ({ ...current, gender: event.target.value }))
-                                        }
-                                        className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
-                                      >
-                                        <option value="">Select gender</option>
-                                        <option value="male">Male</option>
-                                        <option value="female">Female</option>
-                                        <option value="other">Other</option>
-                                      </select>
-                                    </label>
-
-                                    <label className="space-y-2">
-                                      <span className="text-sm font-medium text-slate-700">Date of birth</span>
-                                      <input
-                                        type="date"
-                                        value={patientProfileForm.dateOfBirth}
-                                        onChange={(event) =>
-                                          setPatientProfileForm((current) => ({ ...current, dateOfBirth: event.target.value }))
-                                        }
-                                        className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
-                                      />
-                                    </label>
-
-                                    <label className="space-y-2 md:col-span-2">
-                                      <span className="text-sm font-medium text-slate-700">Address</span>
-                                      <textarea
-                                        value={patientProfileForm.address}
-                                        onChange={(event) =>
-                                          setPatientProfileForm((current) => ({ ...current, address: event.target.value }))
-                                        }
-                                        className="min-h-[120px] w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
-                                        placeholder="Your address"
-                                      />
-                                    </label>
-
-                                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 md:col-span-2">
-                                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Email</p>
-                                      <p className="mt-2 break-all text-sm font-medium text-slate-950">
-                                        {typeof content.patientProfile.userId === "string"
-                                          ? "Not available"
-                                          : content.patientProfile.userId?.email ?? "Not available"}
-                                      </p>
-                                      <p className="mt-2 text-xs text-slate-500">Email is managed from your account profile.</p>
-                                    </div>
+                                    ) : (
+                                      <div className="grid size-20 place-items-center rounded-[1.5rem] bg-gradient-to-br from-blue-600 to-cyan-500 text-2xl font-semibold text-white shadow-[0_16px_36px_rgba(37,99,235,0.2)]">
+                                        {getDoctorInitials(content.doctorProfile)}
+                                      </div>
+                                    )}
                                   </div>
 
-                                  <div className="flex flex-wrap gap-3 pt-2">
-                                    <button
-                                      type="submit"
-                                      disabled={isSavingPatientProfile}
-                                      className="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70"
-                                      style={{ color: "#ffffff" }}
-                                    >
-                                      {isSavingPatientProfile ? "Saving..." : "Save changes"}
-                                    </button>
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Account preview</p>
+                                    <h3 className="mt-2 text-[1.5rem] font-semibold tracking-tight text-slate-950">
+                                      {formatDoctorName(content.doctorProfile)}
+                                    </h3>
+                                    <p className="mt-2 text-sm leading-6 text-slate-600">
+                                      {typeof content.doctorProfile.userId === "string"
+                                        ? "Doctor account details are linked to your profile."
+                                        : content.doctorProfile.userId?.email ?? "No email available"}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <div className="mt-5 flex flex-wrap gap-3">
+                                  <input
+                                    id="doctor-profile-photo"
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={handleDoctorProfileAvatarChange}
+                                    className="hidden"
+                                  />
+                                  <label
+                                    htmlFor="doctor-profile-photo"
+                                    className="inline-flex cursor-pointer items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
+                                    style={{ color: "#ffffff" }}
+                                  >
+                                    {doctorProfileForm.avatar.trim() ? "Replace photo" : "Upload photo"}
+                                  </label>
+                                  {doctorProfileForm.avatar.trim() ? (
                                     <button
                                       type="button"
-                                      onClick={cancelPatientProfileEdit}
+                                      onClick={() => setDoctorProfileForm((current) => ({ ...current, avatar: "" }))}
                                       className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
                                     >
-                                      Cancel
+                                      Remove photo
                                     </button>
-                                  </div>
-                                </form>
-                              ) : (
-                                <div className="mt-6 grid gap-4 md:grid-cols-2">
-                                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-[0_6px_16px_rgba(15,23,42,0.03)]">
-                                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Full name</p>
-                                    <p className="mt-2 text-sm font-medium text-slate-950">
-                                      {formatPatientName(content.patientProfile)}
+                                  ) : null}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="rounded-[1.75rem] border border-slate-200 bg-slate-50/80 p-5 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
+                              <div className="rounded-[1.5rem] border border-white bg-white p-5">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div>
+                                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
+                                      {isEditingDoctorProfile ? "Edit profile" : "Profile details"}
                                     </p>
+                                    <h3 className="mt-2 text-[1.35rem] font-semibold tracking-tight text-slate-950">
+                                      {isEditingDoctorProfile ? "Update your information" : "Your saved profile information"}
+                                    </h3>
                                   </div>
-                                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-[0_6px_16px_rgba(15,23,42,0.03)]">
-                                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Email</p>
-                                    <p className="mt-2 break-all text-sm font-medium text-slate-950">
-                                      {typeof content.patientProfile.userId === "string"
-                                        ? "Not available"
-                                        : content.patientProfile.userId?.email ?? "Not available"}
-                                    </p>
-                                  </div>
-                                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-[0_6px_16px_rgba(15,23,42,0.03)]">
-                                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Phone</p>
-                                    <p className="mt-2 break-all text-sm font-medium text-slate-950">
-                                      {typeof content.patientProfile.userId === "string"
-                                        ? "Not available"
-                                        : content.patientProfile.userId?.phone ?? "Not available"}
-                                    </p>
-                                  </div>
-                                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-[0_6px_16px_rgba(15,23,42,0.03)]">
-                                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Gender</p>
-                                    <p className="mt-2 text-sm font-medium text-slate-950">
-                                      {content.patientProfile.gender ? content.patientProfile.gender : "Not provided"}
-                                    </p>
-                                  </div>
-                                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-[0_6px_16px_rgba(15,23,42,0.03)]">
-                                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Date of birth</p>
-                                    <p className="mt-2 text-sm font-medium text-slate-950">
-                                      {formatDateOfBirth(content.patientProfile.dateOfBirth)}
-                                    </p>
-                                    {content.patientProfile.dateOfBirth ? (
-                                      <p className="mt-1 text-xs text-slate-500">
-                                        {calculateAge(content.patientProfile.dateOfBirth)} years old
-                                      </p>
-                                    ) : null}
-                                  </div>
-                                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Address</p>
-                                    <p className="mt-2 text-sm leading-6 text-slate-950">
-                                      {content.patientProfile.address?.trim() ? content.patientProfile.address : "Not provided"}
-                                    </p>
+                                  <div className="flex flex-wrap gap-2">
+                                    <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${doctorStatusMeta(content.doctorProfile.profileStatus, content.doctorProfile.isPublic).className}`}>
+                                      {doctorStatusMeta(content.doctorProfile.profileStatus, content.doctorProfile.isPublic).label}
+                                    </span>
+                                    <span
+                                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                                        content.doctorProfile.isAvailable
+                                          ? "bg-emerald-50 text-emerald-700"
+                                          : "bg-slate-100 text-slate-600"
+                                      }`}
+                                    >
+                                      {content.doctorProfile.isAvailable ? "Available" : "Unavailable"}
+                                    </span>
                                   </div>
                                 </div>
-                              )}
+
+                                {isEditingDoctorProfile ? (
+                                  <form onSubmit={handleDoctorProfileSubmit} className="mt-6 space-y-4">
+                                    <div className="grid gap-4 md:grid-cols-2">
+                                      <label className="space-y-2 md:col-span-2">
+                                        <span className="text-sm font-medium text-slate-700">Full name</span>
+                                        <input
+                                          type="text"
+                                          value={doctorProfileForm.name}
+                                          onChange={(event) =>
+                                            setDoctorProfileForm((current) => ({ ...current, name: event.target.value }))
+                                          }
+                                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                                          required
+                                        />
+                                      </label>
+
+                                      <label className="space-y-2">
+                                        <span className="text-sm font-medium text-slate-700">Email</span>
+                                        <input
+                                          type="email"
+                                          value={doctorProfileForm.email}
+                                          onChange={(event) =>
+                                            setDoctorProfileForm((current) => ({ ...current, email: event.target.value }))
+                                          }
+                                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                                        />
+                                      </label>
+
+                                      <label className="space-y-2">
+                                        <span className="text-sm font-medium text-slate-700">Phone</span>
+                                        <input
+                                          type="tel"
+                                          value={doctorProfileForm.phone}
+                                          onChange={(event) =>
+                                            setDoctorProfileForm((current) => ({ ...current, phone: event.target.value }))
+                                          }
+                                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                                          placeholder="Phone number"
+                                        />
+                                      </label>
+
+                                      <label className="space-y-2">
+                                        <span className="text-sm font-medium text-slate-700">Speciality</span>
+                                        <input
+                                          type="text"
+                                          value={doctorProfileForm.specialization}
+                                          onChange={(event) =>
+                                            setDoctorProfileForm((current) => ({ ...current, specialization: event.target.value }))
+                                          }
+                                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                                        />
+                                      </label>
+
+                                      <label className="space-y-2">
+                                        <span className="text-sm font-medium text-slate-700">Degree / qualification</span>
+                                        <input
+                                          type="text"
+                                          value={doctorProfileForm.qualification}
+                                          onChange={(event) =>
+                                            setDoctorProfileForm((current) => ({ ...current, qualification: event.target.value }))
+                                          }
+                                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                                          placeholder="MBBS, MD, MS"
+                                        />
+                                      </label>
+
+                                      <label className="space-y-2 md:col-span-2">
+                                        <span className="text-sm font-medium text-slate-700">Address</span>
+                                        <input
+                                          type="text"
+                                          value={doctorProfileForm.address}
+                                          onChange={(event) =>
+                                            setDoctorProfileForm((current) => ({ ...current, address: event.target.value }))
+                                          }
+                                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                                          placeholder="Clinic or home address"
+                                        />
+                                      </label>
+
+                                      <label className="space-y-2">
+                                        <span className="text-sm font-medium text-slate-700">Experience (years)</span>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          value={doctorProfileForm.experienceYears}
+                                          onChange={(event) =>
+                                            setDoctorProfileForm((current) => ({ ...current, experienceYears: event.target.value }))
+                                          }
+                                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                                        />
+                                      </label>
+
+                                      <label className="space-y-2">
+                                        <span className="text-sm font-medium text-slate-700">Consultation fee (NPR)</span>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          value={doctorProfileForm.consultationFee}
+                                          onChange={(event) =>
+                                            setDoctorProfileForm((current) => ({ ...current, consultationFee: event.target.value }))
+                                          }
+                                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                                        />
+                                      </label>
+
+                                      <label className="space-y-2 md:col-span-2">
+                                        <span className="text-sm font-medium text-slate-700">Bio</span>
+                                        <textarea
+                                          value={doctorProfileForm.bio}
+                                          onChange={(event) =>
+                                            setDoctorProfileForm((current) => ({ ...current, bio: event.target.value }))
+                                          }
+                                          className="min-h-[120px] w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-blue-500"
+                                          placeholder="Short doctor bio"
+                                        />
+                                      </label>
+                                    </div>
+
+                                    <div className="flex flex-wrap gap-3 pt-2">
+                                      <button
+                                        type="submit"
+                                        disabled={isSavingDoctorProfile}
+                                        className="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70"
+                                        style={{ color: "#ffffff" }}
+                                      >
+                                        {isSavingDoctorProfile ? "Saving..." : "Submit for review"}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={cancelDoctorProfileEdit}
+                                        className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  </form>
+                                ) : (
+                                  <div className="mt-6 grid gap-4 md:grid-cols-2">
+                                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-[0_6px_16px_rgba(15,23,42,0.03)] md:col-span-2">
+                                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Email</p>
+                                      <p className="mt-2 break-all text-sm font-medium text-slate-950">
+                                        {typeof content.doctorProfile.userId === "string"
+                                          ? "Not available"
+                                          : content.doctorProfile.userId?.email ?? "Not available"}
+                                      </p>
+                                    </div>
+                                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-[0_6px_16px_rgba(15,23,42,0.03)]">
+                                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Full name</p>
+                                      <p className="mt-2 text-sm font-medium text-slate-950">
+                                        {formatDoctorName(content.doctorProfile)}
+                                      </p>
+                                    </div>
+                                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-[0_6px_16px_rgba(15,23,42,0.03)]">
+                                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Phone</p>
+                                      <p className="mt-2 text-sm font-medium text-slate-950">
+                                        {typeof content.doctorProfile.userId === "string"
+                                          ? "Not available"
+                                          : content.doctorProfile.userId?.phone ?? "Not available"}
+                                      </p>
+                                    </div>
+                                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-[0_6px_16px_rgba(15,23,42,0.03)]">
+                                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Speciality</p>
+                                      <p className="mt-2 text-sm font-medium text-slate-950">
+                                        {content.doctorProfile.specialization ?? "General Practice"}
+                                      </p>
+                                    </div>
+                                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-[0_6px_16px_rgba(15,23,42,0.03)]">
+                                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Department</p>
+                                      <p className="mt-2 text-sm font-medium text-slate-950">
+                                        {resolveDoctorDepartmentName(content.doctorProfile as never)}
+                                      </p>
+                                    </div>
+                                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-[0_6px_16px_rgba(15,23,42,0.03)]">
+                                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Qualification</p>
+                                      <p className="mt-2 text-sm font-medium text-slate-950">
+                                        {content.doctorProfile.qualification ?? "Not listed"}
+                                      </p>
+                                    </div>
+                                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-[0_6px_16px_rgba(15,23,42,0.03)]">
+                                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Experience</p>
+                                      <p className="mt-2 text-sm font-medium text-slate-950">
+                                        {formatExperience(content.doctorProfile.experienceYears)}
+                                      </p>
+                                    </div>
+                                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-[0_6px_16px_rgba(15,23,42,0.03)]">
+                                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Consultation fee</p>
+                                      <p className="mt-2 text-sm font-medium text-slate-950">
+                                        {formatCurrency(content.doctorProfile.consultationFee)}
+                                      </p>
+                                    </div>
+                                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 md:col-span-2">
+                                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Address</p>
+                                      <p className="mt-2 text-sm leading-6 text-slate-950">
+                                        {content.doctorProfile.address?.trim() ? content.doctorProfile.address : "Not listed"}
+                                      </p>
+                                    </div>
+                                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 md:col-span-2">
+                                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Bio</p>
+                                      <p className="mt-2 text-sm leading-6 text-slate-700">
+                                        {content.doctorProfile.bio ?? "No bio has been provided for this doctor profile yet."}
+                                      </p>
+                                    </div>
+                                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Public status</p>
+                                      <p className="mt-2 text-sm font-medium text-slate-950">
+                                        {content.doctorProfile.isPublic ? "Public" : "Hidden"}
+                                      </p>
+                                    </div>
+                                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Availability status</p>
+                                      <p className="mt-2 text-sm font-medium text-slate-950">
+                                        {content.doctorProfile.isAvailable ? "Available" : "Unavailable"}
+                                      </p>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
-                        </div>
+                        </>
                       )}
                     </div>
                   </div>
@@ -4177,6 +4552,83 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                           </article>
                         );
                       })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+        ) : activeSection === "Patients" ? (
+          <section className="bg-slate-50 px-6 pb-10 text-slate-900">
+            <div className="mx-auto max-w-[1600px]">
+              <div className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Patients</p>
+                    <h2 className="mt-2 text-[1.75rem] font-semibold tracking-tight text-slate-950">Your patients</h2>
+                    <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                      Patients shown here are grouped from your appointment history.
+                    </p>
+                  </div>
+                  <div className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700">
+                    <span className="font-semibold text-slate-950">{doctorPatients.length}</span> patients
+                  </div>
+                </div>
+
+                <div className="mt-6">
+                  {doctorPatients.length === 0 ? (
+                    <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center">
+                      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">No patients</p>
+                      <h3 className="mt-3 text-xl font-semibold tracking-tight text-slate-950">
+                        No patient records are available yet
+                      </h3>
+                      <p className="mt-3 text-sm leading-6 text-slate-600">
+                        Once patients book appointments with your profile, they will appear here.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      {doctorPatients.map((patient) => (
+                        <article
+                          key={patient.key}
+                          className="rounded-[1.75rem] border border-slate-200 bg-slate-50/80 p-5 shadow-[0_10px_24px_rgba(15,23,42,0.035)]"
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-2xl bg-gradient-to-br from-slate-950 to-slate-800 text-sm font-semibold text-white">
+                              {patient.avatarSrc ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={patient.avatarSrc} alt={patient.name} className="size-full object-cover" />
+                              ) : (
+                                <span>{patient.initials}</span>
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-semibold text-slate-950">{patient.name}</p>
+                                  <p className="mt-1 truncate text-xs text-slate-500">{patient.contact}</p>
+                                </div>
+                                <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                                  {patient.appointmentCount} visit{patient.appointmentCount === 1 ? "" : "s"}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="mt-5 grid gap-2 text-sm text-slate-600">
+                            <div className="flex items-center justify-between gap-3">
+                              <span>Last appointment</span>
+                              <span className="font-medium text-slate-900">{patient.lastAppointmentLabel}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                              <span>Last status</span>
+                              <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${patient.lastStatusMeta.className}`}>
+                                {patient.lastStatusMeta.label}
+                              </span>
+                            </div>
+                          </div>
+                        </article>
+                      ))}
                     </div>
                   )}
                 </div>

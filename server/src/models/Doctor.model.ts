@@ -20,6 +20,10 @@ const DoctorSchema = new Schema(
     },
     isPublic: { type: Boolean, default: false },
     isAvailable: { type: Boolean, default: false },
+    pendingProfileUpdate: {
+      type: Schema.Types.Mixed,
+      default: null,
+    },
   },
   { timestamps: true },
 );
