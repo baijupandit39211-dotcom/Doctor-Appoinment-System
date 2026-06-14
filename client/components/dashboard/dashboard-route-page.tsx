@@ -1830,16 +1830,21 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
   }, [config.expectedRole, router]);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
+    function syncSectionFromLocation() {
+      const searchParams = new URLSearchParams(window.location.search);
+      const sectionParam = searchParams.get("section") ?? "";
+      const defaultSection = sectionNavItems[0]?.label ?? "Overview";
+      const initialSection = sectionNavItems.some((item) => item.label === sectionParam) ? sectionParam : defaultSection;
+      setActiveSection((current) => (current === initialSection ? current : initialSection));
     }
 
-    const searchParams = new URLSearchParams(window.location.search);
-    const sectionParam = searchParams.get("section") ?? "";
-    const defaultSection = sectionNavItems[0]?.label ?? "Overview";
-    const initialSection = sectionNavItems.some((item) => item.label === sectionParam) ? sectionParam : defaultSection;
-    setActiveSection(initialSection);
-  }, [config.expectedRole]);
+    syncSectionFromLocation();
+    window.addEventListener("popstate", syncSectionFromLocation);
+
+    return () => {
+      window.removeEventListener("popstate", syncSectionFromLocation);
+    };
+  }, [config.expectedRole, sectionNavItems]);
 
   useEffect(() => {
     if (!content?.patientProfile || isEditingPatientProfile) {
@@ -2997,6 +3002,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
   });
   const doctorProfile = content.doctorProfile;
   const doctorProfileAvatar = getDoctorAvatarSrc(doctorProfile);
+  const dashboardUserAvatar = user.avatar?.trim() || doctorProfileAvatar || undefined;
   const doctorProfileCompletionItems = [
     { label: "Photo uploaded", complete: Boolean(doctorProfileAvatar) },
     { label: "Speciality set", complete: Boolean(doctorProfile?.specialization?.trim()) },
@@ -3009,6 +3015,11 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
     (doctorProfileCompletionItems.filter((item) => item.complete).length / doctorProfileCompletionItems.length) * 100,
   );
   const viewPublicProfileHref = content.doctorProfileId ? `/doctors/${content.doctorProfileId}` : "/doctor?section=Availability";
+  function handleSectionChange(section: string) {
+    setActiveSection(section);
+    const targetPath = rolePathMap[config.expectedRole];
+    router.replace(`${targetPath}?section=${encodeURIComponent(section)}`, { scroll: false });
+  }
     return (
       <DashboardShell
           roleLabel={config.roleLabel}
@@ -3032,8 +3043,9 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
           name: user.name,
           email: user.email,
           role: user.role,
+          avatar: dashboardUserAvatar,
         }}
-          onNavItemSelect={setActiveSection}
+          onNavItemSelect={handleSectionChange}
           onLogout={handleLogout}
           isLoggingOut={isLoggingOut}
       >

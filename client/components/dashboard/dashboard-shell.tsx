@@ -80,8 +80,9 @@ export function DashboardShell({
           <div className="flex flex-1 flex-col">
             <div className="px-3 sm:px-5 lg:px-6 lg:pt-6">
               <div className="flex items-center gap-3">
-                <div className="grid size-11 place-items-center rounded-2xl bg-gradient-to-br from-slate-950 to-slate-800 text-white shadow-[0_12px_28px_rgba(15,23,42,0.18)]">
-                  <Stethoscope className="size-5 text-white" strokeWidth={2.25} />
+                <div className="relative grid size-11 place-items-center overflow-hidden rounded-full bg-slate-950 text-white shadow-[0_12px_28px_rgba(15,23,42,0.18)] ring-1 ring-slate-200">
+                  <Stethoscope className="size-5 text-white" strokeWidth={2.5} />
+                  <span className="absolute bottom-2 right-2 size-1.5 rounded-full bg-cyan-400" />
                 </div>
                 <div>
                   <p className="text-lg font-semibold tracking-tight">DocPulse</p>
