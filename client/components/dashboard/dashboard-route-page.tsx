@@ -1027,6 +1027,26 @@ function doctorCardStatusLabel(status?: string) {
   }
 }
 
+function isDoctorApprovalPending(doctor?: DoctorRecord) {
+  return doctor?.profileStatus === "pending" || doctor?.pendingProfileUpdate?.status === "pending";
+}
+
+function doctorApprovalBadgeLabel(doctor: DoctorRecord) {
+  if (doctor.pendingProfileUpdate?.status === "pending") {
+    return "Profile update pending review";
+  }
+
+  return doctorCardStatusLabel(doctor.profileStatus);
+}
+
+function doctorApprovalBadgeClassName(doctor: DoctorRecord) {
+  if (doctor.pendingProfileUpdate?.status === "pending") {
+    return "bg-amber-50 text-amber-700 border-amber-200";
+  }
+
+  return doctorStatusMeta(doctor.profileStatus, doctor.isPublic).className;
+}
+
 function countAppointmentsByStatus(appointments: AppointmentRecord[], status: string) {
   return appointments.filter((appointment) => appointment.status === status).length;
 }
@@ -1552,7 +1572,7 @@ async function loadSuperAdminContent() {
   const doctorCount = doctors.length;
   const departmentCount = departments.length;
   const appointmentCount = overview?.totalAppointments ?? appointments.length;
-  const pendingDoctors = doctors.filter((doctor) => doctor.profileStatus === "pending").length;
+  const pendingDoctors = doctors.filter((doctor) => isDoctorApprovalPending(doctor)).length;
   const pendingAppointments = overview?.pendingAppointments ?? countAppointmentsByStatus(appointments, "pending");
   const confirmedAppointments = overview?.confirmedAppointments ?? countAppointmentsByStatus(appointments, "confirmed");
   const completedAppointments = overview?.completedAppointments ?? countAppointmentsByStatus(appointments, "completed");
@@ -1920,8 +1940,8 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
     }
 
     const doctorCount = content.doctors?.length ?? 0;
-    const pendingDoctors = content.doctors?.filter((doctor) => doctor.profileStatus === "pending").length ?? 0;
-    const approvedDoctors = content.doctors?.filter((doctor) => doctor.profileStatus === "approved").length ?? 0;
+    const pendingDoctors = content.doctors?.filter((doctor) => isDoctorApprovalPending(doctor)).length ?? 0;
+    const approvedDoctors = content.doctors?.filter((doctor) => doctor.profileStatus === "approved" && doctor.pendingProfileUpdate?.status !== "pending").length ?? 0;
     const rejectedDoctors = content.doctors?.filter((doctor) => doctor.profileStatus === "rejected").length ?? 0;
     const departmentCount = content.departments?.length ?? 0;
     const activeDepartments = content.departments?.filter((department) => department.isActive !== false).length ?? 0;
@@ -4647,6 +4667,313 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
               </div>
             </div>
           </section>
+        ) : activeSection === "Profile" ? (
+          <section className="bg-slate-50 px-6 pb-10 text-slate-900">
+            <div className="mx-auto max-w-[1600px]">
+              <div className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Profile</p>
+                    <h2 className="mt-2 text-[1.75rem] font-semibold tracking-tight text-slate-950">Your doctor profile</h2>
+                    <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                      Review your profile details, uploaded photo, and public status. Profile edits go to admin review first.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={isEditingDoctorProfile ? cancelDoctorProfileEdit : openDoctorProfileEdit}
+                      className={`inline-flex items-center justify-center rounded-full px-5 py-3 text-sm font-semibold transition ${
+                        isEditingDoctorProfile
+                          ? "border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                          : "bg-blue-600 text-white hover:bg-blue-700"
+                      }`}
+                      style={!isEditingDoctorProfile ? { color: "#ffffff" } : undefined}
+                    >
+                      {isEditingDoctorProfile ? "Cancel edit" : "Edit Profile"}
+                    </button>
+                    <Link
+                      href={viewPublicProfileHref}
+                      className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                    >
+                      View public profile
+                    </Link>
+                  </div>
+                </div>
+
+                {doctorProfileMessage ? (
+                  <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                    {doctorProfileMessage}
+                  </div>
+                ) : null}
+
+                {doctorProfileError || content.doctorProfileError ? (
+                  <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {doctorProfileError || content.doctorProfileError}
+                  </div>
+                ) : null}
+
+                {content.doctorProfile === undefined ? (
+                  <div className="mt-6 rounded-3xl border border-slate-200 bg-slate-50 px-6 py-10 text-center">
+                    <div className="mx-auto size-10 animate-spin rounded-full border-4 border-slate-200 border-t-slate-950" />
+                    <p className="mt-4 text-sm font-medium text-slate-600">Loading profile...</p>
+                  </div>
+                ) : !content.doctorProfile ? (
+                  <div className="mt-6 rounded-3xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center">
+                    <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Profile unavailable</p>
+                    <h3 className="mt-3 text-xl font-semibold tracking-tight text-slate-950">Doctor profile not found</h3>
+                    <p className="mt-3 text-sm leading-6 text-slate-600">Your doctor profile is not ready yet.</p>
+                  </div>
+                ) : (
+                  <>
+                    {content.doctorProfile.pendingProfileUpdate?.status === "pending" ? (
+                      <div className="mt-6 rounded-[1.5rem] border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
+                        <p className="font-semibold">Profile update pending review</p>
+                        <p className="mt-1 leading-6">
+                          Your live profile remains unchanged until the clinic approves the requested update.
+                        </p>
+                      </div>
+                    ) : null}
+
+                    <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+                      <div className="rounded-[1.75rem] border border-slate-200 bg-slate-50/80 p-5 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
+                        <div className="rounded-[1.5rem] border border-white bg-white p-5">
+                          <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-center sm:text-left">
+                            <div className="flex size-28 shrink-0 items-center justify-center overflow-hidden rounded-[1.75rem] border border-slate-200 bg-slate-50">
+                              {(doctorProfileForm.avatar.trim() || doctorProfileAvatar) ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={doctorProfileForm.avatar.trim() || doctorProfileAvatar}
+                                  alt={formatDoctorName(content.doctorProfile)}
+                                  className="h-full w-full object-contain object-center p-2"
+                                />
+                              ) : (
+                                <div className="grid size-20 place-items-center rounded-[1.5rem] bg-gradient-to-br from-blue-600 to-cyan-500 text-2xl font-semibold text-white shadow-[0_16px_36px_rgba(37,99,235,0.2)]">
+                                  {getDoctorInitials(content.doctorProfile)}
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Account preview</p>
+                              <h3 className="mt-2 text-[1.5rem] font-semibold tracking-tight text-slate-950">
+                                {formatDoctorName(content.doctorProfile)}
+                              </h3>
+                              <p className="mt-2 text-sm leading-6 text-slate-600">
+                                {typeof content.doctorProfile.userId === "string"
+                                  ? "Doctor account details are linked to your profile."
+                                  : content.doctorProfile.userId?.email ?? "No email available"}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="mt-5 flex flex-wrap gap-3">
+                            <input
+                              id="doctor-profile-photo"
+                              type="file"
+                              accept="image/*"
+                              onChange={handleDoctorProfileAvatarChange}
+                              className="hidden"
+                            />
+                            <label
+                              htmlFor="doctor-profile-photo"
+                              className="inline-flex cursor-pointer items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
+                              style={{ color: "#ffffff" }}
+                            >
+                              {(doctorProfileForm.avatar.trim() || doctorProfileAvatar) ? "Replace photo" : "Upload photo"}
+                            </label>
+                            {(doctorProfileForm.avatar.trim() || doctorProfileAvatar) ? (
+                              <button
+                                type="button"
+                                onClick={() => setDoctorProfileForm((current) => ({ ...current, avatar: "" }))}
+                                className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                              >
+                                Remove photo
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-[1.75rem] border border-slate-200 bg-slate-50/80 p-5 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
+                        <div className="rounded-[1.5rem] border border-white bg-white p-5">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
+                                {isEditingDoctorProfile ? "Edit profile" : "Profile details"}
+                              </p>
+                              <h3 className="mt-2 text-[1.35rem] font-semibold tracking-tight text-slate-950">
+                                {isEditingDoctorProfile ? "Update your doctor profile" : "Your saved doctor information"}
+                              </h3>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${doctorStatusMeta(content.doctorProfile.profileStatus, content.doctorProfile.isPublic).className}`}>
+                                {doctorStatusMeta(content.doctorProfile.profileStatus, content.doctorProfile.isPublic).label}
+                              </span>
+                              <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${content.doctorProfile.isAvailable ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-100 text-slate-600"}`}>
+                                {content.doctorProfile.isAvailable ? "Available" : "Unavailable"}
+                              </span>
+                            </div>
+                          </div>
+
+                          {isEditingDoctorProfile ? (
+                            <form onSubmit={handleDoctorProfileSubmit} className="mt-6 space-y-4">
+                              <div className="grid gap-4 md:grid-cols-2">
+                                <label className="space-y-2 text-sm">
+                                  <span className="font-medium text-slate-700">Full name</span>
+                                  <input
+                                    value={doctorProfileForm.name}
+                                    onChange={(event) => setDoctorProfileForm((current) => ({ ...current, name: event.target.value }))}
+                                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500"
+                                  />
+                                </label>
+                                <label className="space-y-2 text-sm">
+                                  <span className="font-medium text-slate-700">Email</span>
+                                  <input
+                                    value={doctorProfileForm.email}
+                                    onChange={(event) => setDoctorProfileForm((current) => ({ ...current, email: event.target.value }))}
+                                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500"
+                                  />
+                                </label>
+                                <label className="space-y-2 text-sm">
+                                  <span className="font-medium text-slate-700">Phone</span>
+                                  <input
+                                    value={doctorProfileForm.phone}
+                                    onChange={(event) => setDoctorProfileForm((current) => ({ ...current, phone: event.target.value }))}
+                                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500"
+                                  />
+                                </label>
+                                <label className="space-y-2 text-sm">
+                                  <span className="font-medium text-slate-700">Speciality</span>
+                                  <input
+                                    value={doctorProfileForm.specialization}
+                                    onChange={(event) => setDoctorProfileForm((current) => ({ ...current, specialization: event.target.value }))}
+                                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500"
+                                  />
+                                </label>
+                                <label className="space-y-2 text-sm">
+                                  <span className="font-medium text-slate-700">Qualification</span>
+                                  <input
+                                    value={doctorProfileForm.qualification}
+                                    onChange={(event) => setDoctorProfileForm((current) => ({ ...current, qualification: event.target.value }))}
+                                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500"
+                                  />
+                                </label>
+                                <label className="space-y-2 text-sm">
+                                  <span className="font-medium text-slate-700">Address</span>
+                                  <input
+                                    value={doctorProfileForm.address}
+                                    onChange={(event) => setDoctorProfileForm((current) => ({ ...current, address: event.target.value }))}
+                                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500"
+                                  />
+                                </label>
+                                <label className="space-y-2 text-sm">
+                                  <span className="font-medium text-slate-700">Experience</span>
+                                  <input
+                                    value={doctorProfileForm.experienceYears}
+                                    onChange={(event) =>
+                                      setDoctorProfileForm((current) => ({ ...current, experienceYears: event.target.value }))
+                                    }
+                                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500"
+                                  />
+                                </label>
+                                <label className="space-y-2 text-sm">
+                                  <span className="font-medium text-slate-700">Consultation fee</span>
+                                  <input
+                                    value={doctorProfileForm.consultationFee}
+                                    onChange={(event) =>
+                                      setDoctorProfileForm((current) => ({ ...current, consultationFee: event.target.value }))
+                                    }
+                                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500"
+                                  />
+                                </label>
+                              </div>
+
+                              <label className="block space-y-2 text-sm">
+                                <span className="font-medium text-slate-700">Bio</span>
+                                <textarea
+                                  value={doctorProfileForm.bio}
+                                  onChange={(event) => setDoctorProfileForm((current) => ({ ...current, bio: event.target.value }))}
+                                  rows={5}
+                                  className="w-full rounded-[1.25rem] border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500"
+                                />
+                              </label>
+
+                              <div className="flex flex-wrap gap-3 pt-2">
+                                <button
+                                  type="submit"
+                                  disabled={isSavingDoctorProfile}
+                                  className="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70"
+                                >
+                                  {isSavingDoctorProfile ? "Saving..." : "Submit for review"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={cancelDoctorProfileEdit}
+                                  className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </form>
+                          ) : (
+                            <div className="mt-6 grid gap-3 md:grid-cols-2">
+                              <div className="rounded-2xl bg-slate-50/80 p-4">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Email</p>
+                                <p className="mt-2 text-sm font-medium text-slate-950">
+                                  {typeof content.doctorProfile.userId === "string"
+                                    ? "Not available"
+                                    : content.doctorProfile.userId?.email ?? "Not available"}
+                                </p>
+                              </div>
+                              <div className="rounded-2xl bg-slate-50/80 p-4">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Speciality</p>
+                                <p className="mt-2 text-sm font-medium text-slate-950">
+                                  {content.doctorProfile.specialization ?? "General Practice"}
+                                </p>
+                              </div>
+                              <div className="rounded-2xl bg-slate-50/80 p-4">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Department</p>
+                                <p className="mt-2 text-sm font-medium text-slate-950">{resolveDoctorDepartmentName(content.doctorProfile)}</p>
+                              </div>
+                              <div className="rounded-2xl bg-slate-50/80 p-4">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Qualification</p>
+                                <p className="mt-2 text-sm font-medium text-slate-950">
+                                  {content.doctorProfile.qualification ?? "Not listed"}
+                                </p>
+                              </div>
+                              <div className="rounded-2xl bg-slate-50/80 p-4">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Experience</p>
+                                <p className="mt-2 text-sm font-medium text-slate-950">{formatExperience(content.doctorProfile.experienceYears)}</p>
+                              </div>
+                              <div className="rounded-2xl bg-slate-50/80 p-4">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Consultation fee</p>
+                                <p className="mt-2 text-sm font-medium text-slate-950">
+                                  {formatCurrency(content.doctorProfile.consultationFee)}
+                                </p>
+                              </div>
+                              <div className="rounded-2xl bg-slate-50/80 p-4">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Address</p>
+                                <p className="mt-2 text-sm font-medium text-slate-950">
+                                  {content.doctorProfile.address?.trim() ? content.doctorProfile.address : "Not listed"}
+                                </p>
+                              </div>
+                              <div className="rounded-2xl bg-slate-50/80 p-4 md:col-span-2">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Bio</p>
+                                <p className="mt-2 text-sm leading-6 text-slate-700">
+                                  {content.doctorProfile.bio ?? "No bio has been provided for this doctor profile yet."}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </section>
         ) : (
           <section className="bg-slate-50 px-6 pb-10 text-slate-900">
             <div className="mx-auto max-w-[1600px]">
@@ -5343,19 +5670,21 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                     <div className="mx-auto size-10 animate-spin rounded-full border-4 border-slate-200 border-t-slate-950" />
                     <p className="mt-3 text-sm text-slate-600">Loading pending doctors...</p>
                   </div>
-                ) : content.doctors.filter((doctor) => doctor.profileStatus === "pending").length === 0 ? (
+                ) : content.doctors.filter((doctor) => isDoctorApprovalPending(doctor)).length === 0 ? (
                   <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-8 text-center">
                     <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">No pending doctors</p>
-                    <p className="mt-2 text-sm text-slate-600">All doctor profiles have already been reviewed.</p>
+                    <p className="mt-2 text-sm text-slate-600">All doctor approvals and profile update requests have already been reviewed.</p>
                   </div>
                 ) : (
                   <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                     {content.doctors
-                      .filter((doctor) => doctor.profileStatus === "pending")
+                      .filter((doctor) => isDoctorApprovalPending(doctor))
                       .map((doctor) => {
                         const doctorId = doctor._id ?? "";
                         const avatarSrc = getDoctorAvatarSrc(doctor);
-                        const statusMeta = doctorStatusMeta(doctor.profileStatus, doctor.isPublic);
+                        const statusMeta = {
+                          className: doctorApprovalBadgeClassName(doctor),
+                        };
                         const doctorsBasePath = user?.role === "super_admin" ? "/superadmin" : "/admin";
                         const doctorHref = doctorId ? `${doctorsBasePath}/doctors/${doctorId}` : doctorsBasePath;
 
@@ -5394,7 +5723,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                                     <p className="mt-1 text-sm text-slate-500">{doctor.specialization ?? "General Practice"}</p>
                                   </div>
                                   <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${statusMeta.className}`}>
-                                    {doctorCardStatusLabel(doctor.profileStatus)}
+                                    {doctorApprovalBadgeLabel(doctor)}
                                   </span>
                                 </div>
 

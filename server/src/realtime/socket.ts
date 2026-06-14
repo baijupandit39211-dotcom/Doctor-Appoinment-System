@@ -11,6 +11,7 @@ export type NotificationSocketPayload = {
   title: string;
   message: string;
   type: string;
+  link?: string;
   isRead: boolean;
   createdAt?: string;
   updatedAt?: string;

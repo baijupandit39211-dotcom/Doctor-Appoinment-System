@@ -4,7 +4,7 @@ import * as bcrypt from "bcryptjs";
 import { DoctorModel } from "../models/Doctor.model.js";
 import { UserModel } from "../models/User.model.js";
 import { createDoctorAccount } from "../services/doctor.service.js";
-import { queueNotificationForAdmins, queueNotificationForDoctorUser } from "../services/notification.service.js";
+import { queueNotificationForDoctorUser, queueNotificationForUser } from "../services/notification.service.js";
 import { AppError } from "../utils/appError.js";
 
 function getDoctorIdParams(req: Request) {
@@ -324,17 +324,26 @@ export async function updateDoctor(req: Request, res: Response, next: NextFuncti
         .populate("departmentId", "name description");
 
       const doctorUserId = linkedUserId || req.user._id.toString();
+      const adminRecipients = await UserModel.find({
+        role: { $in: ["clinic_admin", "super_admin"] },
+        isActive: true,
+      }).select("_id role");
       await Promise.all([
         queueNotificationForDoctorUser(doctorUserId, {
           title: "Profile update submitted",
           message: "Your doctor profile update is waiting for admin review.",
           type: "system",
+          link: "/doctor?section=Profile",
         }),
-        queueNotificationForAdmins({
-          title: "Doctor profile update pending review",
-          message: "A doctor profile update is waiting for approval.",
-          type: "system",
-        }),
+        ...adminRecipients.map((admin) =>
+          queueNotificationForUser({
+            userId: admin._id.toString(),
+            title: "Doctor profile update pending review",
+            message: "A doctor profile update is waiting for approval.",
+            type: "system",
+            link: admin.role === "super_admin" ? `/superadmin/doctors/${doctorId}` : `/admin/doctors/${doctorId}`,
+          }),
+        ),
       ]);
 
       res.status(200).json({

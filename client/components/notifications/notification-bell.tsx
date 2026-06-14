@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { BellRing, CheckCheck, Clock3, Loader2, MoreHorizontal, Trash2, X } from "lucide-react";
 
 import { requestJson } from "@/lib/api-client";
@@ -18,6 +19,7 @@ type NotificationRecord = {
   title: string;
   message: string;
   type?: string;
+  link?: string;
   isRead?: boolean;
   createdAt?: string;
 };
@@ -146,6 +148,7 @@ async function playNotificationTone() {
 }
 
 export function NotificationBell({ user }: { user: DashboardUser | null | undefined }) {
+  const router = useRouter();
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
@@ -283,6 +286,48 @@ export function NotificationBell({ user }: { user: DashboardUser | null | undefi
     }, 4000);
 
     toastTimersRef.current.set(id, timer);
+  }
+
+  function resolveNotificationHref(notification: NotificationRecord) {
+    if (notification.link?.trim()) {
+      return notification.link.trim();
+    }
+
+    const title = notification.title.trim().toLowerCase();
+    const message = notification.message.trim().toLowerCase();
+    const isDoctorReviewAlert =
+      title.includes("doctor profile update pending review") ||
+      title.includes("profile update pending review") ||
+      message.includes("doctor profile update is waiting for approval");
+
+    if (isDoctorReviewAlert && (user?.role === "super_admin" || user?.role === "clinic_admin")) {
+      return `${user.role === "super_admin" ? "/superadmin" : "/admin"}?section=Doctor%20Approvals`;
+    }
+
+    return "";
+  }
+
+  async function openNotification(notification: NotificationRecord) {
+    const href = resolveNotificationHref(notification);
+    if (!href) {
+      return;
+    }
+
+    if (!notification.isRead) {
+      try {
+        await requestJson(`/api/notifications/${notification._id}/read`, { method: "PATCH" });
+        setNotifications((current) =>
+          current.map((item) => (item._id === notification._id ? { ...item, isRead: true } : item)),
+        );
+        setUnreadCount((current) => Math.max(current - 1, 0));
+      } catch {
+        // Continue to navigate even if the read update fails.
+      }
+    }
+
+    setIsOpen(false);
+    setOpenNotificationMenuId(null);
+    router.push(href);
   }
 
   async function markAsRead(notificationId: string) {
@@ -429,13 +474,27 @@ export function NotificationBell({ user }: { user: DashboardUser | null | undefi
                   {notifications.slice(0, 8).map((notification) => {
                     const isUnread = !notification.isRead;
                     const isMenuOpen = openNotificationMenuId === notification._id;
+                    const href = resolveNotificationHref(notification);
 
                     return (
                       <article
                         key={notification._id}
+                        role={href ? "button" : undefined}
+                        tabIndex={href ? 0 : undefined}
+                        onClick={href ? () => void openNotification(notification) : undefined}
+                        onKeyDown={
+                          href
+                            ? (event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault();
+                                  void openNotification(notification);
+                                }
+                              }
+                            : undefined
+                        }
                         className={`relative rounded-3xl border px-3.5 py-3 transition sm:px-4 sm:py-4 ${
-                          isUnread ? "border-blue-100 bg-blue-50/70" : "border-slate-200 bg-white"
-                        }`}
+                          href ? "cursor-pointer hover:border-blue-200 hover:bg-blue-50/80" : ""
+                        } ${isUnread ? "border-blue-100 bg-blue-50/70" : "border-slate-200 bg-white"}`}
                       >
                         <div className="flex items-start gap-3">
                           <div className="mt-1 flex shrink-0 items-center gap-2">
@@ -459,11 +518,12 @@ export function NotificationBell({ user }: { user: DashboardUser | null | undefi
                               <div className="relative shrink-0">
                                 <button
                                   type="button"
-                                  onClick={() =>
+                                  onClick={(event) => {
+                                    event.stopPropagation();
                                     setOpenNotificationMenuId((current) =>
                                       current === notification._id ? null : notification._id,
-                                    )
-                                  }
+                                    );
+                                  }}
                                   className="grid size-8 place-items-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
                                   aria-label="Notification actions"
                                   aria-haspopup="menu"
@@ -477,7 +537,8 @@ export function NotificationBell({ user }: { user: DashboardUser | null | undefi
                                     {!notification.isRead ? (
                                       <button
                                         type="button"
-                                        onClick={() => {
+                                        onClick={(event) => {
+                                          event.stopPropagation();
                                           setOpenNotificationMenuId(null);
                                           markAsRead(notification._id);
                                         }}
@@ -489,7 +550,8 @@ export function NotificationBell({ user }: { user: DashboardUser | null | undefi
                                     ) : null}
                                     <button
                                       type="button"
-                                      onClick={() => {
+                                      onClick={(event) => {
+                                        event.stopPropagation();
                                         setOpenNotificationMenuId(null);
                                         deleteNotification(notification._id);
                                       }}

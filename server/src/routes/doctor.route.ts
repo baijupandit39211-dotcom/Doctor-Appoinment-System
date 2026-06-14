@@ -23,5 +23,5 @@ doctorRouter.patch("/:id/unpublish", requireAuth, requireRole("clinic_admin", "s
 doctorRouter.patch("/:id/reject", requireAuth, requireRole("clinic_admin", "super_admin"), rejectDoctor);
 doctorRouter.get("/:id", optionalAuth, getDoctorById);
 doctorRouter.post("/", requireAuth, requireRole("clinic_admin", "super_admin"), createDoctor);
-doctorRouter.patch("/:id", requireAuth, requireRole("clinic_admin", "super_admin"), updateDoctor);
+doctorRouter.patch("/:id", requireAuth, requireRole("doctor", "clinic_admin", "super_admin"), updateDoctor);
 doctorRouter.delete("/:id", requireAuth, requireRole("clinic_admin", "super_admin"), deleteDoctor);

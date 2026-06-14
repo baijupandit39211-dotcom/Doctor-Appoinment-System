@@ -8,6 +8,7 @@ import { ArrowLeft, CheckCircle2, PencilLine, Stethoscope, XCircle } from "lucid
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { DashboardShell } from "./dashboard-shell";
+import { API_BASE_URL } from "@/lib/api";
 import { getCurrentUser, logoutUser, type AuthRole, type AuthUser } from "@/lib/auth";
 import { requestJson } from "@/lib/api-client";
 
@@ -182,6 +183,19 @@ function formatProfileValue(value?: string | number | null) {
   return value.trim() || "Not provided";
 }
 
+function resolveAvatarUrl(value?: string | null) {
+  const avatar = value?.trim();
+  if (!avatar) {
+    return "";
+  }
+
+  if (avatar.startsWith("data:") || avatar.startsWith("http://") || avatar.startsWith("https://")) {
+    return avatar;
+  }
+
+  return avatar.startsWith("/") ? `${API_BASE_URL}${avatar}` : `${API_BASE_URL}/${avatar}`;
+}
+
 function formatScheduleLabel(record: AvailabilityRecord) {
   const day = record.dayOfWeek ? record.dayOfWeek.charAt(0).toUpperCase() + record.dayOfWeek.slice(1) : "Unknown day";
   return `${day} · ${formatTime(record.startTime)}-${formatTime(record.endTime)}`;
@@ -326,13 +340,29 @@ export function DoctorManagementPage({
     router.push(`${basePath}/doctors/${doctorId}/edit`);
   }
 
-  const statusMeta = doctorStatusMeta(doctor?.profileStatus, doctor?.isPublic);
-  const hasPendingProfileUpdate = doctor?.pendingProfileUpdate?.status === "pending";
-  const isPendingDoctor = doctor?.profileStatus === "pending" && !hasPendingProfileUpdate;
+  const doctorRecord = doctor as DoctorDetailRecord;
+  const statusMeta = doctorStatusMeta(doctorRecord.profileStatus, doctorRecord.isPublic);
+  const hasPendingProfileUpdate = doctorRecord.pendingProfileUpdate?.status === "pending";
+  const isPendingDoctor = doctorRecord.profileStatus === "pending" && !hasPendingProfileUpdate;
   const activeSectionLabel = isPendingDoctor ? "Doctor Approvals" : "Doctors";
   const returnHref = `${basePath}?section=${encodeURIComponent(activeSectionLabel)}`;
-  const avatarUrl = getDoctorAvatarUrl(doctor);
+  const avatarUrl = getDoctorAvatarUrl(doctorRecord);
   const nextAvailability = availability.length > 0 ? getNextAvailabilityLabel(availability) : "";
+  const pendingChanges = doctorRecord.pendingProfileUpdate?.changes ?? {};
+  const pendingUserChanges = pendingChanges.user ?? {};
+  const pendingDoctorChanges = pendingChanges.doctor ?? {};
+  const requestedAvatarUrl = resolveAvatarUrl(pendingUserChanges.avatar ?? null);
+  const liveDoctorName = resolveDoctorName(doctorRecord as never);
+  const requestedDoctorName = formatProfileValue(pendingUserChanges.name ?? null);
+  const currentEmail = typeof doctorRecord.userId === "string" ? "Not available" : doctorRecord.userId?.email ?? "Not available";
+  const currentPhone = typeof doctorRecord.userId === "string" ? "Not available" : doctorRecord.userId?.phone ?? "Not available";
+  const requestedEmail = formatProfileValue(pendingUserChanges.email ?? null);
+  const requestedPhone = formatProfileValue(pendingUserChanges.phone ?? null);
+  const requestedSpecialization = formatProfileValue(pendingDoctorChanges.specialization ?? null);
+  const requestedQualification = formatProfileValue(pendingDoctorChanges.qualification ?? null);
+  const requestedAddress = formatProfileValue(pendingDoctorChanges.address ?? null);
+  const requestedExperience = formatProfileValue(pendingDoctorChanges.experienceYears ?? null);
+  const requestedFee = formatProfileValue(pendingDoctorChanges.consultationFee ?? null);
 
   if (isLoading) {
     return (
@@ -566,33 +596,74 @@ export function DoctorManagementPage({
                       </span>
                     </div>
 
-                    <div className="mt-4 grid gap-4 md:grid-cols-2">
-                      <div className="rounded-2xl bg-white px-4 py-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Current live profile</p>
-                        <div className="mt-3 space-y-2 text-sm text-slate-700">
-                          <p><span className="font-semibold text-slate-900">Name:</span> {resolveDoctorName(doctor as never)}</p>
-                          <p><span className="font-semibold text-slate-900">Email:</span> {typeof doctor.userId === "string" ? "Not available" : doctor.userId?.email ?? "Not available"}</p>
-                          <p><span className="font-semibold text-slate-900">Phone:</span> {typeof doctor.userId === "string" ? "Not available" : doctor.userId?.phone ?? "Not available"}</p>
-                          <p><span className="font-semibold text-slate-900">Specialization:</span> {doctor.specialization ?? "General Practice"}</p>
-                          <p><span className="font-semibold text-slate-900">Qualification:</span> {doctor.qualification ?? "Not listed"}</p>
-                          <p><span className="font-semibold text-slate-900">Address:</span> {doctor.address ?? "Not listed"}</p>
-                          <p><span className="font-semibold text-slate-900">Fee:</span> {formatCurrency(doctor.consultationFee)}</p>
+                <div className="mt-4 overflow-hidden rounded-[1.5rem] border border-amber-200 bg-white">
+                  <div className="grid border-b border-amber-100 bg-amber-50/70 px-4 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-amber-800 md:grid-cols-[1.15fr_1fr_1fr]">
+                    <span>Field</span>
+                    <span>Current live value</span>
+                    <span>Requested change</span>
+                  </div>
+
+                  <div className="grid gap-0 md:grid-cols-[1.15fr_1fr_1fr]">
+                    <div className="border-b border-slate-100 px-4 py-3 text-sm font-semibold text-slate-950">Photo</div>
+                    <div className="border-b border-slate-100 px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="grid size-12 place-items-center overflow-hidden rounded-2xl bg-slate-50 ring-1 ring-slate-200">
+                          {avatarUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={avatarUrl} alt={liveDoctorName} className="size-full object-contain object-center p-1" />
+                          ) : (
+                            <span className="text-sm font-semibold text-slate-400">No photo</span>
+                          )}
                         </div>
-                      </div>
-                      <div className="rounded-2xl bg-white px-4 py-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Requested changes</p>
-                        <div className="mt-3 space-y-2 text-sm text-slate-700">
-                          <p><span className="font-semibold text-slate-900">Name:</span> {formatProfileValue(doctor.pendingProfileUpdate?.changes?.user?.name ?? null)}</p>
-                          <p><span className="font-semibold text-slate-900">Email:</span> {formatProfileValue(doctor.pendingProfileUpdate?.changes?.user?.email ?? null)}</p>
-                          <p><span className="font-semibold text-slate-900">Phone:</span> {formatProfileValue(doctor.pendingProfileUpdate?.changes?.user?.phone ?? null)}</p>
-                          <p><span className="font-semibold text-slate-900">Specialization:</span> {formatProfileValue(doctor.pendingProfileUpdate?.changes?.doctor?.specialization ?? null)}</p>
-                          <p><span className="font-semibold text-slate-900">Qualification:</span> {formatProfileValue(doctor.pendingProfileUpdate?.changes?.doctor?.qualification ?? null)}</p>
-                          <p><span className="font-semibold text-slate-900">Address:</span> {formatProfileValue(doctor.pendingProfileUpdate?.changes?.doctor?.address ?? null)}</p>
-                          <p><span className="font-semibold text-slate-900">Fee:</span> {formatProfileValue(doctor.pendingProfileUpdate?.changes?.doctor?.consultationFee ?? null)}</p>
-                        </div>
+                        <span className="text-sm text-slate-700">{avatarUrl ? "Uploaded doctor photo" : "No photo uploaded"}</span>
                       </div>
                     </div>
+                    <div className="border-b border-slate-100 px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="grid size-12 place-items-center overflow-hidden rounded-2xl bg-slate-50 ring-1 ring-amber-200">
+                          {requestedAvatarUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={requestedAvatarUrl}
+                              alt={requestedDoctorName}
+                              className="size-full object-contain object-center p-1"
+                            />
+                          ) : (
+                            <span className="text-sm font-semibold text-slate-400">No change</span>
+                          )}
+                        </div>
+                        <span className="text-sm text-slate-700">{requestedAvatarUrl ? "New requested photo" : "No photo change"}</span>
+                      </div>
+                    </div>
+
+                    {[
+                      { label: "Name", current: liveDoctorName, requested: requestedDoctorName },
+                      { label: "Email", current: currentEmail, requested: requestedEmail },
+                      { label: "Phone", current: currentPhone, requested: requestedPhone },
+                      { label: "Specialization", current: doctor.specialization ?? "General Practice", requested: requestedSpecialization },
+                      { label: "Qualification", current: doctor.qualification ?? "Not listed", requested: requestedQualification },
+                      { label: "Address", current: doctor.address ?? "Not listed", requested: requestedAddress },
+                      { label: "Experience", current: formatExperience(doctor.experienceYears), requested: requestedExperience },
+                      { label: "Fee", current: formatCurrency(doctor.consultationFee), requested: requestedFee },
+                    ].map((item) => {
+                      const requestedIsMissing = item.requested === "Not provided";
+                      const currentMatchesRequested = !requestedIsMissing && item.current === item.requested;
+
+                      return (
+                        <div key={item.label} className="grid border-b border-slate-100 md:col-span-3 md:grid-cols-[1.15fr_1fr_1fr]">
+                          <div className="px-4 py-3 text-sm font-semibold text-slate-950">{item.label}</div>
+                          <div className="px-4 py-3 text-sm text-slate-700">
+                            {item.current}
+                          </div>
+                          <div className={`px-4 py-3 text-sm ${requestedIsMissing ? "text-slate-400" : currentMatchesRequested ? "text-slate-500" : "font-medium text-amber-800"}`}>
+                            {requestedIsMissing ? "No change requested" : item.requested}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
+                </div>
+              </div>
                 ) : null}
 
                 <div className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">

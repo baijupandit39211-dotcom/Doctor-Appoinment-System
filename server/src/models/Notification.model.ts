@@ -11,6 +11,7 @@ const NotificationSchema = new Schema(
       enum: notificationTypes,
       default: "system",
     },
+    link: { type: String, trim: true },
     isRead: { type: Boolean, default: false },
   },
   { timestamps: true },

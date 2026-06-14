@@ -13,6 +13,7 @@ type CreateNotificationInput = {
   title: string;
   message: string;
   type?: NotificationType;
+  link?: string;
   isRead?: boolean;
 };
 
@@ -59,6 +60,7 @@ function serializeNotification(notification: NotificationDocument & { _id?: unkn
     title: notification.title,
     message: notification.message,
     type: notification.type,
+    link: typeof notification.link === "string" && notification.link.trim() ? notification.link.trim() : undefined,
     isRead: notification.isRead,
     createdAt: notificationWithTimestamps.createdAt ? notificationWithTimestamps.createdAt.toISOString() : undefined,
     updatedAt: notificationWithTimestamps.updatedAt ? notificationWithTimestamps.updatedAt.toISOString() : undefined,
@@ -72,6 +74,7 @@ export async function queueNotificationForUser(input: CreateNotificationInput) {
       title: input.title,
       message: input.message,
       type: input.type ?? "system",
+      link: typeof input.link === "string" && input.link.trim() ? input.link.trim() : undefined,
       isRead: input.isRead ?? false,
     });
 
