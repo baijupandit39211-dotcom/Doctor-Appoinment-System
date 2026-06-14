@@ -2457,7 +2457,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
     const currentStart = parseAvailabilityTime(startTime);
     const currentEnd = parseAvailabilityTime(endTime);
 
-    if (!currentStart || !currentEnd) {
+    if (currentStart == null || currentEnd == null) {
       setAvailabilityError("Start time and end time must be valid times.");
       return;
     }
