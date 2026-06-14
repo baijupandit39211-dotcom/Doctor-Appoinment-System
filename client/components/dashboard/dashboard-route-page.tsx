@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
-import { BellRing, Clock3, Upload, X } from "lucide-react";
+import { ArrowRight, BellRing, CalendarDays, CheckCheck, Clock3, LayoutDashboard, Upload, Users, X } from "lucide-react";
 
 import { DashboardShell } from "./dashboard-shell";
 import { getCurrentUser, logoutUser, type AuthRole, type AuthUser } from "@/lib/auth";
@@ -55,6 +55,8 @@ type DashboardContent = {
   doctorProfileId?: string;
   doctorProfileStatus?: string;
   doctorAccessAllowed?: boolean;
+  doctorProfile?: DoctorRecord;
+  doctorProfileError?: string;
 };
 
 type SectionHeroCard = {
@@ -79,6 +81,7 @@ type AppointmentRecord = {
     userId?: {
       name?: string;
       email?: string;
+      phone?: string;
     };
   } | string;
   doctorId?: {
@@ -533,6 +536,14 @@ function formatAppointmentPatient(patient?: AppointmentRecord["patientId"]) {
   return patient.userId?.name ?? "Patient details unavailable";
 }
 
+function formatAppointmentPatientContact(patient?: AppointmentRecord["patientId"]) {
+  if (!patient || typeof patient === "string") {
+    return "Contact unavailable";
+  }
+
+  return patient.userId?.phone ?? patient.userId?.email ?? "Contact unavailable";
+}
+
 function sortNotifications(notifications: NotificationRecord[]) {
   return [...notifications].sort((left, right) => {
     const leftTime = left.createdAt ? new Date(left.createdAt).getTime() : 0;
@@ -650,6 +661,130 @@ function formatTime(value?: string) {
   }
 
   return value;
+}
+
+function getTodayDayKey(date = new Date()) {
+  return ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"][date.getDay()];
+}
+
+function isSameLocalDay(value?: string, reference = new Date()) {
+  if (!value) {
+    return false;
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return false;
+  }
+
+  return (
+    date.getFullYear() === reference.getFullYear() &&
+    date.getMonth() === reference.getMonth() &&
+    date.getDate() === reference.getDate()
+  );
+}
+
+const availabilityDayOrder: Record<string, number> = {
+  monday: 0,
+  tuesday: 1,
+  wednesday: 2,
+  thursday: 3,
+  friday: 4,
+  saturday: 5,
+  sunday: 6,
+};
+
+function parseAvailabilityTime(value?: string) {
+  if (!value) {
+    return null;
+  }
+
+  const match = value.trim().match(/^(\d{2}):(\d{2})$/);
+  if (!match) {
+    return null;
+  }
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    return null;
+  }
+
+  return hours * 60 + minutes;
+}
+
+function getAvailabilityRecordKey(record: AvailabilityRecord) {
+  return (
+    record._id ??
+    `${resolveId(record.doctorId) || "doctor"}-${record.dayOfWeek ?? ""}-${record.startTime ?? ""}-${record.endTime ?? ""}`
+  );
+}
+
+function sortAvailabilityRecords(records: AvailabilityRecord[]) {
+  return [...records].sort((left, right) => {
+    const leftDay = availabilityDayOrder[normalizeSpecialityLabel(left.dayOfWeek)] ?? Number.MAX_SAFE_INTEGER;
+    const rightDay = availabilityDayOrder[normalizeSpecialityLabel(right.dayOfWeek)] ?? Number.MAX_SAFE_INTEGER;
+
+    if (leftDay !== rightDay) {
+      return leftDay - rightDay;
+    }
+
+    const leftStart = parseAvailabilityTime(left.startTime) ?? Number.MAX_SAFE_INTEGER;
+    const rightStart = parseAvailabilityTime(right.startTime) ?? Number.MAX_SAFE_INTEGER;
+
+    if (leftStart !== rightStart) {
+      return leftStart - rightStart;
+    }
+
+    if ((left.isActive ?? true) !== (right.isActive ?? true)) {
+      return left.isActive === false ? 1 : -1;
+    }
+
+    return (parseAvailabilityTime(left.endTime) ?? Number.MAX_SAFE_INTEGER) - (parseAvailabilityTime(right.endTime) ?? Number.MAX_SAFE_INTEGER);
+  });
+}
+
+function mergeAvailabilityRecords(existing: AvailabilityRecord[], incoming: AvailabilityRecord[]) {
+  const merged = new Map<string, AvailabilityRecord>();
+
+  existing.forEach((record) => {
+    merged.set(getAvailabilityRecordKey(record), record);
+  });
+
+  incoming.forEach((record) => {
+    merged.set(getAvailabilityRecordKey(record), record);
+  });
+
+  return sortAvailabilityRecords(Array.from(merged.values()));
+}
+
+function overlapsAvailabilitySlot(
+  left: Pick<AvailabilityRecord, "dayOfWeek" | "startTime" | "endTime">,
+  right: Pick<AvailabilityRecord, "dayOfWeek" | "startTime" | "endTime">,
+) {
+  if (normalizeSpecialityLabel(left.dayOfWeek) !== normalizeSpecialityLabel(right.dayOfWeek)) {
+    return false;
+  }
+
+  const leftStart = parseAvailabilityTime(left.startTime);
+  const leftEnd = parseAvailabilityTime(left.endTime);
+  const rightStart = parseAvailabilityTime(right.startTime);
+  const rightEnd = parseAvailabilityTime(right.endTime);
+
+  if (leftStart == null || leftEnd == null || rightStart == null || rightEnd == null) {
+    return false;
+  }
+
+  return leftStart < rightEnd && rightStart < leftEnd;
+}
+
+function formatAvailabilityDuration(minutes?: number) {
+  if (!minutes || minutes <= 0) {
+    return "Duration unavailable";
+  }
+
+  return `${minutes} min`;
 }
 
 const patientDoctorSpecialityOptions = [
@@ -874,16 +1009,26 @@ function SectionHero({
   cards: SectionHeroCard[];
 }) {
   return (
-    <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">{label}</p>
-      <h2 className="mt-2 text-2xl font-semibold tracking-tight">{title}</h2>
-      <p className="mt-2 text-sm leading-6 text-slate-600">{subtitle}</p>
+    <div className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">{label}</p>
+          <h2 className="mt-2 text-[1.85rem] font-semibold tracking-tight text-slate-950">{title}</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{subtitle}</p>
+        </div>
+        <span className="inline-flex w-fit items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+          Live overview
+        </span>
+      </div>
       <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {cards.map((card) => (
-          <article key={card.title} className="rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Clinic area</p>
-            <h3 className="mt-2 text-lg font-semibold tracking-tight text-slate-950">{card.title}</h3>
-            <p className="mt-3 text-sm leading-6 text-slate-600">{card.text}</p>
+          <article
+            key={card.title}
+            className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.035)]"
+          >
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-600">Summary</p>
+            <h3 className="mt-2 text-base font-semibold tracking-tight text-slate-950">{card.title}</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600">{card.text}</p>
           </article>
         ))}
       </div>
@@ -1016,13 +1161,23 @@ async function loadDoctorContent(): Promise<DashboardContent> {
     };
   }
 
-  const [notificationsResult, appointmentsResult] = await Promise.allSettled([
+  const doctorId = overview?.doctorId ?? "";
+  const [notificationsResult, appointmentsResult, doctorProfileResult] = await Promise.allSettled([
     requestJson<unknown>("/api/notifications/me"),
     requestJson<AppointmentRecord[]>("/api/appointments/me"),
+    doctorId ? requestJson<DoctorRecord>(`/api/doctors/${doctorId}`) : Promise.resolve({ data: undefined } as ApiListResponse<DoctorRecord>),
   ]);
 
   const unreadCount = notificationsResult.status === "fulfilled" ? notificationsResult.value.unreadCount ?? 0 : 0;
   const appointments = appointmentsResult.status === "fulfilled" ? appointmentsResult.value.data ?? [] : [];
+  const doctorProfile =
+    doctorProfileResult.status === "fulfilled" ? doctorProfileResult.value.data ?? undefined : undefined;
+  const doctorProfileError =
+    doctorProfileResult.status === "rejected"
+      ? doctorProfileResult.reason instanceof Error
+        ? doctorProfileResult.reason.message
+        : "Failed to load doctor profile"
+      : "";
   const appointmentsError =
     appointmentsResult.status === "rejected"
       ? appointmentsResult.reason instanceof Error
@@ -1036,7 +1191,6 @@ async function loadDoctorContent(): Promise<DashboardContent> {
   const completedAppointments = overview?.completedAppointments ?? countAppointmentsByStatus(appointments, "completed");
   const cancelledAppointments = overview?.cancelledAppointments ?? countAppointmentsByStatus(appointments, "cancelled");
   const noShowAppointments = overview?.noShowAppointments ?? countAppointmentsByStatus(appointments, "no_show");
-  const doctorId = overview?.doctorId ?? "";
   let availability: AvailabilityRecord[] = [];
   let availabilityError = "";
 
@@ -1076,6 +1230,8 @@ async function loadDoctorContent(): Promise<DashboardContent> {
     doctorProfileId: doctorId,
     doctorProfileStatus: doctorProfileStatus || undefined,
     doctorAccessAllowed: true,
+    doctorProfile,
+    doctorProfileError,
     appointmentStatusSummary: [
       { label: "Pending", value: formatCount(pendingAppointments), className: "bg-amber-50 text-amber-700 border-amber-200" },
       { label: "Confirmed", value: formatCount(confirmedAppointments), className: "bg-sky-50 text-sky-700 border-sky-200" },
@@ -1382,6 +1538,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
   const [isUpdatingDoctorId, setIsUpdatingDoctorId] = useState<string | null>(null);
   const [isSavingAvailability, setIsSavingAvailability] = useState(false);
   const [isDeletingAvailabilityId, setIsDeletingAvailabilityId] = useState<string | null>(null);
+  const [isUpdatingAvailabilityId, setIsUpdatingAvailabilityId] = useState<string | null>(null);
   const [isSavingDepartment, setIsSavingDepartment] = useState(false);
   const [isSavingDoctor, setIsSavingDoctor] = useState(false);
   const [isDeletingDepartmentId, setIsDeletingDepartmentId] = useState<string | null>(null);
@@ -1400,6 +1557,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
   const [isEditingPatientProfile, setIsEditingPatientProfile] = useState(false);
   const [isSavingPatientProfile, setIsSavingPatientProfile] = useState(false);
   const [patientNotificationFilter, setPatientNotificationFilter] = useState<"all" | "unread" | "read">("all");
+  const [doctorAppointmentFilter, setDoctorAppointmentFilter] = useState<"all" | "pending" | "confirmed" | "completed" | "cancelled" | "no_show">("all");
   const [departmentForm, setDepartmentForm] = useState({ name: "", description: "" });
   const [doctorCreationForm, setDoctorCreationForm] = useState<DoctorCreationFormState>({
     avatar: "",
@@ -1437,6 +1595,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
   const [departmentsError, setDepartmentsError] = useState("");
   const [doctorCreationError, setDoctorCreationError] = useState("");
   const [error, setError] = useState("");
+  const [availabilityRecords, setAvailabilityRecords] = useState<AvailabilityRecord[]>([]);
   const [patientProfileForm, setPatientProfileForm] = useState({
     avatar: "",
     name: "",
@@ -1547,6 +1706,14 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
       );
     }
   }, [content?.doctorProfileId, user?.role]);
+
+  useEffect(() => {
+    if (!content?.availability) {
+      return;
+    }
+
+    setAvailabilityRecords((current) => mergeAvailabilityRecords(current, content.availability ?? []));
+  }, [content?.availability]);
 
   async function handleLogout() {
     setIsLoggingOut(true);
@@ -2282,6 +2449,55 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
       return;
     }
 
+    const selectedDay = availabilityForm.dayOfWeek.trim().toLowerCase();
+    const startTime = availabilityForm.startTime.trim();
+    const endTime = availabilityForm.endTime.trim();
+    const slotDurationMinutes = Number(availabilityForm.slotDurationMinutes || 30);
+    const doctorAvailability = availabilityRecords.filter((availability) => resolveId(availability.doctorId) === doctorId);
+    const currentStart = parseAvailabilityTime(startTime);
+    const currentEnd = parseAvailabilityTime(endTime);
+
+    if (!currentStart || !currentEnd) {
+      setAvailabilityError("Start time and end time must be valid times.");
+      return;
+    }
+
+    if (currentEnd <= currentStart) {
+      setAvailabilityError("End time must be later than start time.");
+      return;
+    }
+
+    if (!Number.isInteger(slotDurationMinutes) || slotDurationMinutes < 5) {
+      setAvailabilityError("Slot duration must be at least 5 minutes.");
+      return;
+    }
+
+    if (slotDurationMinutes > currentEnd - currentStart) {
+      setAvailabilityError("Slot duration cannot be longer than the availability window.");
+      return;
+    }
+
+    if ((currentEnd - currentStart) % slotDurationMinutes !== 0) {
+      setAvailabilityError("The time range must be divisible by the slot duration.");
+      return;
+    }
+
+    const overlappingAvailability = doctorAvailability.find((availability) => {
+      if (editingAvailabilityId && availability._id === editingAvailabilityId) {
+        return false;
+      }
+
+      return overlapsAvailabilitySlot(
+        { dayOfWeek: selectedDay, startTime, endTime },
+        { dayOfWeek: availability.dayOfWeek, startTime: availability.startTime, endTime: availability.endTime },
+      );
+    });
+
+    if (overlappingAvailability) {
+      setAvailabilityError("This availability overlaps an existing slot on the same day.");
+      return;
+    }
+
     setAvailabilityMessage("");
     setAvailabilityError("");
     setIsSavingAvailability(true);
@@ -2289,23 +2505,29 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
     try {
       const payload = {
         doctorId,
-        dayOfWeek: availabilityForm.dayOfWeek,
-        startTime: availabilityForm.startTime.trim(),
-        endTime: availabilityForm.endTime.trim(),
-        slotDurationMinutes: Number(availabilityForm.slotDurationMinutes || 30),
+        dayOfWeek: selectedDay,
+        startTime,
+        endTime,
+        slotDurationMinutes,
       };
 
       if (editingAvailabilityId) {
-        await requestJson(`/api/availability/${editingAvailabilityId}`, {
+        const response = await requestJson<AvailabilityRecord>(`/api/availability/${editingAvailabilityId}`, {
           method: "PATCH",
           body: JSON.stringify(payload),
         });
+        if (response.data) {
+          setAvailabilityRecords((current) => sortAvailabilityRecords(mergeAvailabilityRecords(current, [response.data as AvailabilityRecord])));
+        }
         setAvailabilityMessage("Availability updated successfully.");
       } else {
-        await requestJson("/api/availability", {
+        const response = await requestJson<AvailabilityRecord>("/api/availability", {
           method: "POST",
           body: JSON.stringify(payload),
         });
+        if (response.data) {
+          setAvailabilityRecords((current) => sortAvailabilityRecords(mergeAvailabilityRecords(current, [response.data as AvailabilityRecord])));
+        }
         setAvailabilityMessage("Availability created successfully.");
       }
 
@@ -2334,6 +2556,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
         method: "DELETE",
       });
       setAvailabilityMessage("Availability deleted successfully.");
+      setAvailabilityRecords((current) => current.filter((record) => getAvailabilityRecordKey(record) !== availabilityId));
       if (editingAvailabilityId === availabilityId) {
         cancelAvailabilityEdit();
       }
@@ -2344,6 +2567,35 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
       );
     } finally {
       setIsDeletingAvailabilityId(null);
+    }
+  }
+
+  async function handleAvailabilityToggleStatus(availability: AvailabilityRecord) {
+    const availabilityId = availability._id ?? "";
+    if (!availabilityId || !user) {
+      return;
+    }
+
+    setAvailabilityMessage("");
+    setAvailabilityError("");
+    setIsUpdatingAvailabilityId(availabilityId);
+
+    try {
+      const response = await requestJson<AvailabilityRecord>(`/api/availability/${availabilityId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ isActive: availability.isActive === false }),
+      });
+      const updatedAvailability = response.data ?? { ...availability, isActive: availability.isActive === false };
+
+      setAvailabilityRecords((current) => sortAvailabilityRecords(mergeAvailabilityRecords(current, [updatedAvailability])));
+      setAvailabilityMessage(updatedAvailability.isActive === false ? "Availability marked inactive." : "Availability marked active.");
+      await refreshDashboardContent(user);
+    } catch (availabilityToggleError) {
+      setAvailabilityError(
+        availabilityToggleError instanceof Error ? availabilityToggleError.message : "Failed to update availability",
+      );
+    } finally {
+      setIsUpdatingAvailabilityId(null);
     }
   }
 
@@ -2446,6 +2698,34 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
     return null;
   }
 
+  const doctorAvailabilityRecords = availabilityRecords;
+  const activeDoctorAvailability = doctorAvailabilityRecords.filter((availability) => availability.isActive !== false);
+  const todayDayKey = getTodayDayKey();
+  const todayAvailability = activeDoctorAvailability.filter(
+    (availability) => normalizeSpecialityLabel(availability.dayOfWeek) === todayDayKey,
+  );
+  const todayAppointments = (content.appointments ?? [])
+    .filter((appointment) => isSameLocalDay(appointment.appointmentDate))
+    .sort((left, right) => (left.startTime ?? "").localeCompare(right.startTime ?? ""));
+  const upcomingTodayAppointments = todayAppointments.filter((appointment) => {
+    const status = appointment.status ?? "";
+    return status === "pending" || status === "confirmed";
+  });
+  const doctorProfile = content.doctorProfile;
+  const doctorProfileAvatar = getDoctorAvatarSrc(doctorProfile);
+  const doctorProfileCompletionItems = [
+    { label: "Photo uploaded", complete: Boolean(doctorProfileAvatar) },
+    { label: "Speciality set", complete: Boolean(doctorProfile?.specialization?.trim()) },
+    { label: "Consultation fee set", complete: Number(doctorProfile?.consultationFee ?? 0) > 0 },
+    { label: "Bio added", complete: Boolean(doctorProfile?.bio?.trim()) },
+    { label: "Profile approved", complete: content.doctorProfileStatus === "approved" },
+    { label: "Availability configured", complete: activeDoctorAvailability.length > 0 },
+  ];
+  const doctorProfileCompletion = Math.round(
+    (doctorProfileCompletionItems.filter((item) => item.complete).length / doctorProfileCompletionItems.length) * 100,
+  );
+  const viewPublicProfileHref = content.doctorProfileId ? `/doctors/${content.doctorProfileId}` : "/doctor?section=Availability";
+
     return (
       <DashboardShell
           roleLabel={config.roleLabel}
@@ -2478,14 +2758,14 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
       {user.role === "patient" ? (
         <section className="bg-slate-50 px-6 pb-10 text-slate-900">
           <div className="mx-auto max-w-[1600px]">
-            <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+            <div className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
               {activeSection === "Overview" ? (
                 <>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                     <div>
-                      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Overview</p>
-                      <h2 className="mt-2 text-2xl font-semibold tracking-tight">Your patient dashboard</h2>
-                      <p className="mt-2 text-sm leading-6 text-slate-600">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Overview</p>
+                      <h2 className="mt-2 text-[1.75rem] font-semibold tracking-tight text-slate-950">Your patient dashboard</h2>
+                      <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
                         A quick summary of your appointments, doctors, notifications, and profile status.
                       </p>
                     </div>
@@ -2510,24 +2790,26 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                     {content.stats.map((stat) => (
                       <article
                         key={stat.label}
-                        className="rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]"
+                        className="rounded-[1.75rem] border border-slate-200 bg-slate-50/80 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.035)]"
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="text-sm font-medium text-slate-600">{stat.label}</div>
-                          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Live</span>
+                          <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-blue-700">
+                            Live
+                          </span>
                         </div>
-                        <div className="mt-4 text-3xl font-semibold tracking-tight text-slate-950">{stat.value}</div>
-                        <p className="mt-3 text-sm leading-6 text-slate-600">{stat.detail}</p>
+                        <div className="mt-4 text-[2.15rem] font-semibold tracking-tight text-slate-950">{stat.value}</div>
+                        <p className="mt-2 text-sm leading-6 text-slate-600">{stat.detail}</p>
                       </article>
                     ))}
                   </div>
 
                   <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-                    <div className="rounded-3xl border border-slate-200 p-6">
+                    <div className="rounded-[1.75rem] border border-slate-200 p-6 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
                       <div className="flex items-center justify-between gap-3">
                         <div>
-                          <p className="text-sm font-semibold text-slate-900">Recent activity</p>
-                          <p className="mt-1 text-sm text-slate-500">The latest updates in your account.</p>
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Recent activity</p>
+                          <p className="mt-2 text-sm text-slate-500">The latest updates in your account.</p>
                         </div>
                         <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
                           Updated now
@@ -2536,7 +2818,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
 
                       <div className="mt-6 space-y-3">
                         {content.highlights.map((item) => (
-                          <div key={item} className="flex items-start gap-3 rounded-2xl bg-slate-50 p-4">
+                          <div key={item} className="flex items-start gap-3 rounded-[1.4rem] border border-slate-200 bg-slate-50/80 p-4">
                             <div className="mt-0.5 grid size-8 place-items-center rounded-full bg-blue-50 text-blue-600">
                               <BellRing className="size-4" />
                             </div>
@@ -2546,34 +2828,63 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                       </div>
                     </div>
 
-                    <div className="rounded-3xl border border-slate-200 p-6">
-                      <p className="text-sm font-semibold text-slate-900">Quick actions</p>
-                      <p className="mt-1 text-sm text-slate-500">Jump straight to the most-used patient areas.</p>
-                      <div className="mt-6 grid gap-3">
-                        <Link
-                          href="/patient?section=Doctors"
-                          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
-                        >
-                          Doctors
-                        </Link>
-                        <Link
-                          href="/patient?section=Appointments"
-                          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
-                        >
-                          Appointments
-                        </Link>
-                        <Link
-                          href="/patient?section=Notifications"
-                          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
-                        >
-                          Notifications
-                        </Link>
-                        <Link
-                          href="/patient?section=Profile"
-                          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
-                        >
-                          Profile
-                        </Link>
+                    <div className="rounded-[1.75rem] border border-slate-200 bg-gradient-to-b from-white to-slate-50/70 p-6 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Quick actions</p>
+                          <p className="mt-2 text-sm text-slate-500">Jump straight to the most-used patient areas.</p>
+                        </div>
+                        <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">4 shortcuts</span>
+                      </div>
+                      <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                        {[
+                          {
+                            title: "Doctors",
+                            href: "/patient?section=Doctors",
+                            description: "Browse available doctors and book appointments.",
+                            icon: Users,
+                          },
+                          {
+                            title: "Appointments",
+                            href: "/patient?section=Appointments",
+                            description: "Review your booking timeline and status.",
+                            icon: CalendarDays,
+                          },
+                          {
+                            title: "Notifications",
+                            href: "/patient?section=Notifications",
+                            description: "Check alerts and recent updates.",
+                            icon: BellRing,
+                          },
+                          {
+                            title: "Profile",
+                            href: "/patient?section=Profile",
+                            description: "Update your account details and photo.",
+                            icon: LayoutDashboard,
+                          },
+                        ].map((action) => {
+                          const Icon = action.icon;
+                          return (
+                            <Link
+                              key={action.title}
+                              href={action.href}
+                              className="group rounded-[1.4rem] border border-slate-200 bg-white/90 p-4 transition duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:bg-blue-50/70 hover:shadow-[0_10px_24px_rgba(37,99,235,0.08)]"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex items-start gap-3">
+                                  <div className="grid size-9 place-items-center rounded-2xl bg-blue-50 text-blue-600 ring-1 ring-blue-100 transition group-hover:bg-white">
+                                    <Icon className="size-4" />
+                                  </div>
+                                  <div>
+                                    <p className="text-sm font-semibold text-slate-950">{action.title}</p>
+                                    <p className="mt-1 text-xs leading-5 text-slate-600">{action.description}</p>
+                                  </div>
+                                </div>
+                                <ArrowRight className="mt-0.5 size-4 text-slate-400 transition group-hover:translate-x-1 group-hover:text-blue-600" />
+                              </div>
+                            </Link>
+                          );
+                        })}
                       </div>
                     </div>
                   </div>
@@ -2582,9 +2893,9 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                 <>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                     <div>
-                      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Doctors</p>
-                      <h2 className="mt-2 text-2xl font-semibold tracking-tight">Browse available doctors</h2>
-                      <p className="mt-2 text-sm leading-6 text-slate-600">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Doctors</p>
+                      <h2 className="mt-2 text-[1.9rem] font-semibold tracking-tight text-slate-950">Browse available doctors</h2>
+                      <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
                         Live public doctor profiles pulled from <span className="font-medium text-slate-700">/api/doctors</span>.
                       </p>
                     </div>
@@ -2609,9 +2920,9 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                   ) : (
                     <>
                       <div className="mt-6 grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
-                        <aside className="rounded-[1.75rem] border border-slate-200 bg-slate-50 p-5 shadow-sm">
+                        <aside className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-5 shadow-sm">
                           <div>
-                            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Speciality</p>
+                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Speciality</p>
                             <h3 className="mt-2 text-lg font-semibold tracking-tight text-slate-950">Filter doctors</h3>
                             <p className="mt-2 text-sm leading-6 text-slate-600">Select a speciality to narrow the doctor list.</p>
                           </div>
@@ -2673,7 +2984,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                             </label>
                           </div>
 
-                          <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                          <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-[1.5rem] border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-600">
                             <span>
                               Showing <span className="font-semibold text-slate-950">{filteredPatientDoctors.length}</span> of{" "}
                               <span className="font-semibold text-slate-950">{(content.doctors ?? []).filter((doctor) => doctor.profileStatus === "approved" && doctor.isPublic === true && doctor.isAvailable === true).length}</span>{" "}
@@ -2694,7 +3005,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                           </div>
 
                           {filteredPatientDoctors.length === 0 ? (
-                            <div className="mt-6 rounded-3xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center">
+                            <div className="mt-6 rounded-[1.75rem] border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center">
                               <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">No doctors</p>
                               <h3 className="mt-3 text-xl font-semibold tracking-tight text-slate-950">
                                 No doctors match the current filters
@@ -2717,7 +3028,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                                     className="group block h-full cursor-pointer"
                                     aria-label={`Open ${formatDoctorName(doctor)} details`}
                                   >
-                                    <article className="h-full overflow-hidden rounded-3xl border border-white bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] transition group-hover:-translate-y-0.5 group-hover:shadow-[0_18px_42px_rgba(15,23,42,0.08)]">
+                                    <article className="h-full overflow-hidden rounded-[1.75rem] border border-white bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] transition group-hover:-translate-y-0.5 group-hover:shadow-[0_18px_42px_rgba(15,23,42,0.08)]">
                                       <div className="bg-gradient-to-br from-slate-50 via-white to-sky-50 p-3">
                                         <div className="flex h-44 items-center justify-center overflow-hidden rounded-[1.25rem] bg-white sm:h-48">
                                           {avatarSrc ? (
@@ -2795,8 +3106,10 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                       <>
                         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                           <div className="min-w-0">
-                            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Notifications</p>
-                            <h2 className="mt-2 text-2xl font-semibold tracking-tight sm:text-[1.7rem]">Live alerts and updates</h2>
+                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Notifications</p>
+                            <h2 className="mt-2 text-[1.9rem] font-semibold tracking-tight text-slate-950 sm:text-[1.9rem]">
+                              Live alerts and updates
+                            </h2>
                             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
                               View recent alerts from appointments, approvals, and system activity.
                             </p>
@@ -2825,7 +3138,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                           </div>
                         </div>
 
-                        <div className="mt-5 flex flex-wrap items-center gap-2 rounded-3xl border border-slate-200 bg-slate-50 p-2">
+                        <div className="mt-5 flex flex-wrap items-center gap-2 rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-2">
                           {[
                             { key: "all", label: "All" },
                             { key: "unread", label: "Unread" },
@@ -2883,7 +3196,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                               <p className="mt-4 text-sm font-medium text-slate-600">Loading notifications...</p>
                             </div>
                           ) : content.notifications.length === 0 ? (
-                            <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center">
+                            <div className="rounded-[1.75rem] border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center">
                               <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">No notifications</p>
                               <h3 className="mt-3 text-xl font-semibold tracking-tight text-slate-950">You are all caught up</h3>
                               <p className="mt-3 text-sm leading-6 text-slate-600">
@@ -2891,7 +3204,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                               </p>
                             </div>
                           ) : filteredNotifications.length === 0 ? (
-                            <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center">
+                            <div className="rounded-[1.75rem] border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center">
                               <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">No matches</p>
                               <h3 className="mt-3 text-xl font-semibold tracking-tight text-slate-950">
                                 No {patientNotificationFilter === "all" ? "" : patientNotificationFilter} notifications found
@@ -2911,7 +3224,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                                 return (
                             <article
                                     key={notificationId || `${notification.title}-${notification.createdAt}`}
-                                    className={`rounded-3xl border p-4 sm:p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)] transition ${
+                                    className={`rounded-[1.75rem] border p-4 sm:p-5 shadow-[0_10px_24px_rgba(15,23,42,0.035)] transition ${
                                       isUnread ? "border-blue-100 bg-blue-50/70" : "border-slate-200 bg-slate-50"
                                     }`}
                                   >
@@ -2976,12 +3289,12 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
               ) : activeSection === "Profile" ? (
                 <section className="bg-slate-50 px-6 pb-10 text-slate-900">
                   <div className="mx-auto max-w-[1600px]">
-                    <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+                    <div className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                         <div>
-                          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Profile</p>
-                          <h2 className="mt-2 text-2xl font-semibold tracking-tight">Your patient profile</h2>
-                          <p className="mt-2 text-sm leading-6 text-slate-600">
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Profile</p>
+                          <h2 className="mt-2 text-[1.9rem] font-semibold tracking-tight text-slate-950">Your patient profile</h2>
+                          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
                             Review and update your personal details, profile photo, and contact information.
                           </p>
                         </div>
@@ -3026,7 +3339,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                         </div>
                       ) : (
                         <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-                          <div className="rounded-[1.75rem] border border-slate-200 bg-slate-50 p-5 shadow-sm">
+                          <div className="rounded-[1.75rem] border border-slate-200 bg-slate-50/80 p-5 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
                             <div className="rounded-[1.5rem] border border-white bg-white p-5">
                               <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-center sm:text-left">
                                 <div className="flex size-28 shrink-0 items-center justify-center overflow-hidden rounded-[1.75rem] border border-slate-200 bg-slate-50">
@@ -3045,8 +3358,8 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                                 </div>
 
                                 <div className="min-w-0 flex-1">
-                                  <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Account preview</p>
-                                  <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
+                                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Account preview</p>
+                                  <h3 className="mt-2 text-[1.5rem] font-semibold tracking-tight text-slate-950">
                                     {formatPatientName(content.patientProfile)}
                                   </h3>
                                   <p className="mt-2 text-sm leading-6 text-slate-600">
@@ -3085,14 +3398,14 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                             </div>
                           </div>
 
-                          <div className="rounded-[1.75rem] border border-slate-200 bg-slate-50 p-5 shadow-sm">
+                          <div className="rounded-[1.75rem] border border-slate-200 bg-slate-50/80 p-5 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
                             <div className="rounded-[1.5rem] border border-white bg-white p-5">
                               <div className="flex items-start justify-between gap-3">
                                 <div>
-                                  <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">
+                                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
                                     {isEditingPatientProfile ? "Edit profile" : "Profile details"}
                                   </p>
-                                  <h3 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">
+                                  <h3 className="mt-2 text-[1.35rem] font-semibold tracking-tight text-slate-950">
                                     {isEditingPatientProfile ? "Update your information" : "Your saved profile information"}
                                   </h3>
                                 </div>
@@ -3198,13 +3511,13 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                                 </form>
                               ) : (
                                 <div className="mt-6 grid gap-4 md:grid-cols-2">
-                                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-[0_6px_16px_rgba(15,23,42,0.03)]">
                                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Full name</p>
                                     <p className="mt-2 text-sm font-medium text-slate-950">
                                       {formatPatientName(content.patientProfile)}
                                     </p>
                                   </div>
-                                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-[0_6px_16px_rgba(15,23,42,0.03)]">
                                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Email</p>
                                     <p className="mt-2 break-all text-sm font-medium text-slate-950">
                                       {typeof content.patientProfile.userId === "string"
@@ -3212,7 +3525,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                                         : content.patientProfile.userId?.email ?? "Not available"}
                                     </p>
                                   </div>
-                                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-[0_6px_16px_rgba(15,23,42,0.03)]">
                                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Phone</p>
                                     <p className="mt-2 break-all text-sm font-medium text-slate-950">
                                       {typeof content.patientProfile.userId === "string"
@@ -3220,13 +3533,13 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                                         : content.patientProfile.userId?.phone ?? "Not available"}
                                     </p>
                                   </div>
-                                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-[0_6px_16px_rgba(15,23,42,0.03)]">
                                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Gender</p>
                                     <p className="mt-2 text-sm font-medium text-slate-950">
                                       {content.patientProfile.gender ? content.patientProfile.gender : "Not provided"}
                                     </p>
                                   </div>
-                                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-[0_6px_16px_rgba(15,23,42,0.03)]">
                                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Date of birth</p>
                                     <p className="mt-2 text-sm font-medium text-slate-950">
                                       {formatDateOfBirth(content.patientProfile.dateOfBirth)}
@@ -3254,14 +3567,14 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                 </section>
               ) : (
                 <>
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                    <div>
-                      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Appointments</p>
-                      <h2 className="mt-2 text-2xl font-semibold tracking-tight">Your live appointment timeline</h2>
-                      <p className="mt-2 text-sm leading-6 text-slate-600">
-                        Pulled directly from <span className="font-medium text-slate-700">/api/appointments/me</span>.
-                      </p>
-                    </div>
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Appointments</p>
+                          <h2 className="mt-2 text-[1.9rem] font-semibold tracking-tight text-slate-950">Your live appointment timeline</h2>
+                          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                            Pulled directly from <span className="font-medium text-slate-700">/api/appointments/me</span>.
+                          </p>
+                        </div>
                     {appointmentsMessage ? (
                       <div className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700">
                         {appointmentsMessage}
@@ -3321,7 +3634,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                           return (
                             <article
                               key={appointmentId || `${appointment.appointmentDate}-${appointment.startTime}`}
-                              className="rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]"
+                            className="rounded-[1.75rem] border border-slate-200 bg-slate-50/80 p-5 shadow-[0_10px_24px_rgba(15,23,42,0.035)]"
                             >
                               <div className="flex items-start justify-between gap-3">
                                 <div>
@@ -3371,12 +3684,12 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
         activeSection === "Overview" ? (
           <section className="bg-slate-50 px-6 pb-10 text-slate-900">
             <div className="mx-auto max-w-[1600px]">
-              <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+              <div className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                   <div>
                     <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Overview</p>
-                    <h2 className="mt-2 text-2xl font-semibold tracking-tight">Your doctor dashboard</h2>
-                    <p className="mt-2 text-sm leading-6 text-slate-600">
+                    <h2 className="mt-2 text-[1.75rem] font-semibold tracking-tight text-slate-950">Your doctor dashboard</h2>
+                    <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
                       Quick visibility into your appointment load, availability, and account activity.
                     </p>
                   </div>
@@ -3401,70 +3714,227 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                   {content.stats.map((stat) => (
                     <article
                       key={stat.label}
-                      className="rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]"
+                      className="rounded-[1.75rem] border border-slate-200 bg-slate-50/80 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.035)]"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="text-sm font-medium text-slate-600">{stat.label}</div>
-                        <span className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Live</span>
+                        <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-blue-700">
+                          Live
+                        </span>
                       </div>
-                      <div className="mt-4 text-3xl font-semibold tracking-tight text-slate-950">{stat.value}</div>
-                      <p className="mt-3 text-sm leading-6 text-slate-600">{stat.detail}</p>
+                      <div className="mt-4 text-[2.15rem] font-semibold tracking-tight text-slate-950">{stat.value}</div>
+                      <p className="mt-2 text-sm leading-6 text-slate-600">{stat.detail}</p>
                     </article>
                   ))}
                 </div>
 
-                <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-                  <div className="rounded-3xl border border-slate-200 p-6">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">Recent activity</p>
-                        <p className="mt-1 text-sm text-slate-500">The latest appointment and account updates.</p>
+                <div className="mt-8 grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)]">
+                  <div className="space-y-6">
+                    <div className="rounded-[1.75rem] border border-slate-200 p-6 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Today&apos;s Schedule</p>
+                          <p className="mt-2 text-sm text-slate-500">Appointments scheduled for today.</p>
+                        </div>
+                        <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                          {todayAppointments.length} items · {upcomingTodayAppointments.length} upcoming
+                        </div>
                       </div>
-                      <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                        Updated now
-                      </div>
+
+                      {todayAppointments.length === 0 ? (
+                        <div className="mt-6 rounded-[1.5rem] border border-dashed border-slate-300 bg-slate-50 px-5 py-8 text-center">
+                          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">No schedule</p>
+                          <p className="mt-2 text-sm leading-6 text-slate-600">
+                            You do not have any appointments scheduled for today.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="mt-6 grid gap-3">
+                          {todayAppointments.slice(0, 4).map((appointment) => {
+                            const meta = appointmentStatusMeta(appointment.status);
+                            return (
+                              <article
+                                key={appointment._id ?? `${appointment.appointmentDate}-${appointment.startTime}`}
+                                className="flex flex-col gap-3 rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between"
+                              >
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-semibold text-slate-950">
+                                    {formatAppointmentPatient(appointment.patientId)}
+                                  </p>
+                                  <p className="mt-1 text-sm text-slate-600">
+                                    {appointment.reason?.trim() ? appointment.reason : "No reason provided"}
+                                  </p>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${meta.className}`}>{meta.label}</span>
+                                  <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600">
+                                    {appointment.startTime ?? "--:--"}
+                                  </span>
+                                </div>
+                              </article>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
 
-                    <div className="mt-6 space-y-3">
-                      {content.highlights.map((item) => (
-                        <div key={item} className="flex items-start gap-3 rounded-2xl bg-slate-50 p-4">
-                          <div className="mt-0.5 grid size-8 place-items-center rounded-full bg-blue-50 text-blue-600">
-                            <BellRing className="size-4" />
-                          </div>
-                          <p className="text-sm leading-6 text-slate-700">{item}</p>
+                    <div className="rounded-[1.75rem] border border-slate-200 p-6 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Availability Summary</p>
+                          <p className="mt-2 text-sm text-slate-500">Your live weekly availability windows.</p>
                         </div>
-                      ))}
+                        <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                          {activeDoctorAvailability.length} active
+                        </div>
+                      </div>
+
+                      <div className="mt-6 grid gap-3 md:grid-cols-3">
+                        <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-4">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Weekly slots</p>
+                          <p className="mt-2 text-2xl font-semibold text-slate-950">{doctorAvailabilityRecords.length}</p>
+                        </div>
+                        <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-4">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Active slots</p>
+                          <p className="mt-2 text-2xl font-semibold text-slate-950">{activeDoctorAvailability.length}</p>
+                        </div>
+                        <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-4">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Today</p>
+                          <p className="mt-2 text-2xl font-semibold text-slate-950">{todayAvailability.length}</p>
+                        </div>
+                      </div>
+
+                      <div className="mt-5 rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-4">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Today&apos;s windows</p>
+                        {todayAvailability.length === 0 ? (
+                          <div className="mt-2 rounded-2xl border border-dashed border-blue-200 bg-white px-4 py-4">
+                            <p className="text-sm font-semibold text-slate-950">No availability is live right now.</p>
+                            <p className="mt-1 text-sm leading-6 text-slate-600">
+                              Add at least one weekly slot so patients can see when you are available.
+                            </p>
+                            <Link
+                              href="/doctor?section=Availability"
+                              className="mt-4 inline-flex items-center justify-center rounded-full bg-gradient-to-r from-blue-600 to-cyan-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:opacity-95"
+                            >
+                              Manage Availability
+                            </Link>
+                          </div>
+                        ) : (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {todayAvailability.map((availability) => (
+                              <span
+                                key={`${availability.dayOfWeek}-${availability.startTime}-${availability.endTime}`}
+                                className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700"
+                              >
+                                <Clock3 className="size-4 text-blue-600" />
+                                {formatTime(availability.startTime)} - {formatTime(availability.endTime)}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
 
-                  <div className="rounded-3xl border border-slate-200 p-6">
-                    <p className="text-sm font-semibold text-slate-900">Quick actions</p>
-                    <p className="mt-1 text-sm text-slate-500">Jump straight to the most-used doctor areas.</p>
-                    <div className="mt-6 grid gap-3">
-                      <Link
-                        href="/doctor?section=Appointments"
-                        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
-                      >
-                        Appointments
-                      </Link>
-                      <Link
-                        href="/doctor?section=Availability"
-                        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
-                      >
-                        Availability
-                      </Link>
-                      <Link
-                        href="/doctor?section=Patients"
-                        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
-                      >
-                        Patients
-                      </Link>
-                      <Link
-                        href="/doctor"
-                        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
-                      >
-                        Dashboard
-                      </Link>
+                  <div className="space-y-6">
+                    <div className="rounded-[1.75rem] border border-slate-200 p-6 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Profile Completion</p>
+                          <p className="mt-2 text-sm text-slate-500">A quick health check for your profile readiness.</p>
+                        </div>
+                        <div className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                          {doctorProfileCompletion}%
+                        </div>
+                      </div>
+
+                      <div className="mt-6">
+                        <div className="h-3 overflow-hidden rounded-full bg-slate-100">
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-blue-600 to-cyan-500"
+                            style={{ width: `${doctorProfileCompletion}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="mt-5 grid gap-2.5">
+                        {doctorProfileCompletionItems.map((step) => (
+                          <div key={step.label} className="flex items-center gap-3 rounded-2xl bg-slate-50/80 px-4 py-3">
+                            <div
+                              className={`grid size-7 place-items-center rounded-full ${
+                                step.complete ? "bg-emerald-50 text-emerald-700" : "bg-slate-200 text-slate-500"
+                              }`}
+                            >
+                              <CheckCheck className="size-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-slate-950">{step.label}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-[1.75rem] border border-slate-200 bg-gradient-to-b from-white to-slate-50/70 p-6 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">Quick action cards</p>
+                          <p className="mt-1 text-sm text-slate-500">Jump to the screens you use most.</p>
+                        </div>
+                        <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                          4 shortcuts
+                        </span>
+                      </div>
+                      <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                        {[
+                          {
+                            title: "Appointments",
+                            href: "/doctor?section=Appointments",
+                            description: "Review your live appointment queue.",
+                            icon: CalendarDays,
+                          },
+                          {
+                            title: "Availability",
+                            href: "/doctor?section=Availability",
+                            description: "Update weekly availability slots.",
+                            icon: Clock3,
+                          },
+                          {
+                            title: "Patients",
+                            href: "/doctor?section=Patients",
+                            description: "Open patient records and follow-ups.",
+                            icon: Users,
+                          },
+                        {
+                            title: "View Public Profile",
+                            href: viewPublicProfileHref,
+                            description: "Open the public doctor profile patients see.",
+                            icon: LayoutDashboard,
+                          },
+                        ].map((action) => {
+                          const Icon = action.icon;
+                          return (
+                            <Link
+                              key={action.title}
+                              href={action.href}
+                              className="group rounded-[1.4rem] border border-slate-200 bg-white/90 p-4 transition duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:bg-blue-50/70 hover:shadow-[0_10px_24px_rgba(37,99,235,0.08)]"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex items-start gap-3">
+                                  <div className="grid size-9 place-items-center rounded-2xl bg-blue-50 text-blue-600 ring-1 ring-blue-100 transition group-hover:bg-white">
+                                    <Icon className="size-4" />
+                                  </div>
+                                  <div>
+                                    <p className="text-sm font-semibold text-slate-950">{action.title}</p>
+                                    <p className="mt-1 text-xs leading-5 text-slate-600">{action.description}</p>
+                                  </div>
+                                </div>
+                                <ArrowRight className="mt-0.5 size-4 text-slate-400 transition group-hover:translate-x-1 group-hover:text-blue-600" />
+                              </div>
+                            </Link>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -3485,7 +3955,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                     </div>
                     <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700">
                       <span className="size-2 rounded-full bg-emerald-500" />
-                      {formatCount(content.availability?.length ?? 0)} records
+                      {formatCount(availabilityRecords.length)} records
                     </div>
                   </div>
 
@@ -3584,6 +4054,10 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                     </label>
                   </div>
 
+                  <p className="mt-3 text-xs text-slate-500">
+                    Slots must not overlap another slot on the same day, and the time range must divide evenly by the slot duration.
+                  </p>
+
                   <div className="mt-5 flex flex-wrap gap-3">
                     <button
                       type="submit"
@@ -3602,96 +4076,122 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                   </div>
                 </form>
 
-                {content.availability === undefined ? (
-                  <div className="mt-6 rounded-2xl border border-slate-200 bg-white px-4 py-6 text-center">
-                    <div className="mx-auto size-10 animate-spin rounded-full border-4 border-slate-200 border-t-slate-950" />
-                    <p className="mt-3 text-sm text-slate-600">Loading availability...</p>
-                  </div>
-                  ) : content.availability.length === 0 ? (
-                    <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-8 text-center">
+                <div className="mt-6">
+                  {content.availability === undefined ? (
+                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-6 text-center">
+                      <div className="mx-auto size-10 animate-spin rounded-full border-4 border-slate-200 border-t-slate-950" />
+                      <p className="mt-3 text-sm text-slate-600">Loading availability...</p>
+                    </div>
+                  ) : availabilityRecords.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-8 text-center">
                       <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">No availability</p>
                       <p className="mt-2 text-sm text-slate-600">Your weekly availability will appear here once added.</p>
                     </div>
                   ) : (
-                  <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    {content.availability.map((availabilityItem) => {
-                      const availabilityId = availabilityItem._id ?? "";
-                      const isActive = availabilityItem.isActive !== false;
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      {availabilityRecords.map((availabilityItem) => {
+                        const availabilityId = availabilityItem._id ?? "";
+                        const isActive = availabilityItem.isActive !== false;
+                        const startMinutes = parseAvailabilityTime(availabilityItem.startTime);
+                        const endMinutes = parseAvailabilityTime(availabilityItem.endTime);
+                        const totalMinutes =
+                          startMinutes != null && endMinutes != null && endMinutes > startMinutes
+                            ? endMinutes - startMinutes
+                            : null;
 
-                      return (
-                        <article
-                          key={availabilityId || `${availabilityItem.dayOfWeek}-${availabilityItem.startTime}`}
-                          className="rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]"
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-semibold text-slate-950">
-                                {availabilityDayLabel(availabilityItem.dayOfWeek)}
-                              </p>
-                              <p className="mt-1 text-xs text-slate-500">
-                                {formatTime(availabilityItem.startTime)} - {formatTime(availabilityItem.endTime)}
-                              </p>
+                        return (
+                          <article
+                            key={getAvailabilityRecordKey(availabilityItem)}
+                            className="rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-semibold text-slate-950">
+                                  {availabilityDayLabel(availabilityItem.dayOfWeek)}
+                                </p>
+                                <p className="mt-1 text-xs text-slate-500">
+                                  {formatTime(availabilityItem.startTime)} - {formatTime(availabilityItem.endTime)}
+                                </p>
+                              </div>
+                              <span
+                                className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                                  isActive
+                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                    : "border-slate-200 bg-slate-100 text-slate-600"
+                                }`}
+                              >
+                                {isActive ? "Active" : "Inactive"}
+                              </span>
                             </div>
-                            <span
-                              className={`rounded-full border px-3 py-1 text-xs font-semibold ${
-                                isActive
-                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                  : "border-slate-200 bg-slate-100 text-slate-600"
-                              }`}
-                            >
-                              {isActive ? "Active" : "Inactive"}
-                            </span>
-                          </div>
 
-                          <div className="mt-4 space-y-2 text-sm text-slate-600">
-                            <div className="flex items-center justify-between gap-3">
-                              <span>Start time</span>
-                              <span className="font-medium text-slate-900">{formatTime(availabilityItem.startTime)}</span>
+                            <div className="mt-4 grid gap-2 text-sm text-slate-600">
+                              <div className="flex items-center justify-between gap-3">
+                                <span>Day</span>
+                                <span className="font-medium text-slate-900">{availabilityDayLabel(availabilityItem.dayOfWeek)}</span>
+                              </div>
+                              <div className="flex items-center justify-between gap-3">
+                                <span>Start time</span>
+                                <span className="font-medium text-slate-900">{formatTime(availabilityItem.startTime)}</span>
+                              </div>
+                              <div className="flex items-center justify-between gap-3">
+                                <span>End time</span>
+                                <span className="font-medium text-slate-900">{formatTime(availabilityItem.endTime)}</span>
+                              </div>
+                              <div className="flex items-center justify-between gap-3">
+                                <span>Duration</span>
+                                <span className="font-medium text-slate-900">
+                                  {totalMinutes != null ? formatAvailabilityDuration(availabilityItem.slotDurationMinutes) : "Duration unavailable"}
+                                </span>
+                              </div>
                             </div>
-                            <div className="flex items-center justify-between gap-3">
-                              <span>End time</span>
-                              <span className="font-medium text-slate-900">{formatTime(availabilityItem.endTime)}</span>
-                            </div>
-                            <div className="flex items-center justify-between gap-3">
-                              <span>Slot duration</span>
-                              <span className="font-medium text-slate-900">{availabilityItem.slotDurationMinutes ?? 30} min</span>
-                            </div>
-                          </div>
 
-                          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                            <button
-                              type="button"
-                              onClick={() => startAvailabilityEdit(availabilityItem)}
-                              className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleAvailabilityDelete(availabilityId)}
-                              disabled={isDeletingAvailabilityId === availabilityId}
-                              className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-70"
-                            >
-                              {isDeletingAvailabilityId === availabilityId ? "Deleting..." : "Delete"}
-                            </button>
-                          </div>
-                        </article>
-                      );
-                    })}
-                  </div>
-                )}
+                            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                              <button
+                                type="button"
+                                onClick={() => startAvailabilityEdit(availabilityItem)}
+                                className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleAvailabilityToggleStatus(availabilityItem)}
+                                disabled={isUpdatingAvailabilityId === availabilityId}
+                                className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70"
+                              >
+                                {isUpdatingAvailabilityId === availabilityId
+                                  ? "Updating..."
+                                  : isActive
+                                    ? "Deactivate"
+                                    : "Activate"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleAvailabilityDelete(availabilityId)}
+                                disabled={isDeletingAvailabilityId === availabilityId}
+                                className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-70 sm:col-span-2"
+                              >
+                                {isDeletingAvailabilityId === availabilityId ? "Deleting..." : "Delete"}
+                              </button>
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </section>
         ) : (
           <section className="bg-slate-50 px-6 pb-10 text-slate-900">
             <div className="mx-auto max-w-[1600px]">
-              <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+              <div className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                   <div>
-                    <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Appointments</p>
-                    <h2 className="mt-2 text-2xl font-semibold tracking-tight">Your appointment queue</h2>
-                    <p className="mt-2 text-sm leading-6 text-slate-600">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Appointments</p>
+                    <h2 className="mt-2 text-[1.75rem] font-semibold tracking-tight text-slate-950">Your appointment queue</h2>
+                    <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
                       Pulled directly from <span className="font-medium text-slate-700">/api/appointments/me</span>.
                     </p>
                   </div>
@@ -3700,6 +4200,48 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                       {appointmentsMessage}
                     </div>
                   ) : null}
+                </div>
+
+                <div className="mt-6 flex flex-wrap items-center gap-2 rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-2">
+                  {[
+                    { key: "all", label: "All" },
+                    { key: "pending", label: "Pending" },
+                    { key: "confirmed", label: "Confirmed" },
+                    { key: "completed", label: "Completed" },
+                    { key: "cancelled", label: "Cancelled" },
+                    { key: "no_show", label: "No-show" },
+                  ].map((item) => {
+                    const isActive = doctorAppointmentFilter === item.key;
+
+                    return (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() =>
+                          setDoctorAppointmentFilter(item.key as "all" | "pending" | "confirmed" | "completed" | "cancelled" | "no_show")
+                        }
+                        className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                          isActive
+                            ? "bg-blue-600 text-white shadow-sm"
+                            : "bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                  <div className="ml-auto rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600">
+                    <span className="font-semibold text-slate-900">
+                      {(content.appointments ?? []).filter((appointment) => {
+                        if (doctorAppointmentFilter === "all") {
+                          return true;
+                        }
+
+                        return appointment.status === doctorAppointmentFilter;
+                      }).length}
+                    </span>{" "}
+                    shown
+                  </div>
                 </div>
 
                 <div className="mt-6">
@@ -3728,96 +4270,132 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
                         When patients book with your profile, their appointments will appear here.
                       </p>
                     </div>
-                  ) : (
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                      {content.appointments.map((appointment) => {
-                        const meta = appointmentStatusMeta(appointment.status);
-                        const appointmentId = appointment._id ?? "";
-                        const isPending = appointment.status === "pending";
-                        const isConfirmed = appointment.status === "confirmed";
-                        const isActionable = isPending || isConfirmed;
+                  ) : (() => {
+                    const filteredAppointments = (content.appointments ?? []).filter((appointment) => {
+                      if (doctorAppointmentFilter === "all") {
+                        return true;
+                      }
 
-                        return (
-                          <article
-                            key={appointmentId || `${appointment.appointmentDate}-${appointment.startTime}`}
-                            className="rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]"
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <p className="text-sm font-semibold text-slate-950">
-                                  {formatAppointmentPatient(appointment.patientId)}
-                                </p>
-                                <p className="mt-1 text-xs text-slate-500">
-                                  {appointment.reason?.trim() ? appointment.reason : "No reason provided"}
-                                </p>
-                              </div>
-                              <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${meta.className}`}>
-                                {meta.label}
-                              </span>
-                            </div>
+                      return appointment.status === doctorAppointmentFilter;
+                    });
 
-                            <div className="mt-4 space-y-2 text-sm text-slate-600">
-                              <div className="flex items-center justify-between gap-3">
-                                <span>Date</span>
-                                <span className="font-medium text-slate-900">
-                                  {formatAppointmentDate(appointment.appointmentDate)}
+                    if (filteredAppointments.length === 0) {
+                      return (
+                        <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center">
+                          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">No matches</p>
+                          <h3 className="mt-3 text-xl font-semibold tracking-tight text-slate-950">
+                            No {doctorAppointmentFilter === "no_show" ? "no-show" : doctorAppointmentFilter} appointments found
+                          </h3>
+                          <p className="mt-3 text-sm leading-6 text-slate-600">
+                            Switch to another status filter to view the rest of your appointment queue.
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        {filteredAppointments.map((appointment) => {
+                          const meta = appointmentStatusMeta(appointment.status);
+                          const appointmentId = appointment._id ?? "";
+                          const patientName = formatAppointmentPatient(appointment.patientId);
+                          const patientContact = formatAppointmentPatientContact(appointment.patientId);
+                          const isPending = appointment.status === "pending";
+                          const isConfirmed = appointment.status === "confirmed";
+                          const isActionable = isPending || isConfirmed;
+
+                          return (
+                            <article
+                              key={appointmentId || `${appointment.appointmentDate}-${appointment.startTime}`}
+                              className="rounded-[1.75rem] border border-slate-200 bg-slate-50/80 p-5 shadow-[0_10px_24px_rgba(15,23,42,0.035)]"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-semibold text-slate-950">{patientName}</p>
+                                  <p className="mt-1 text-xs text-slate-500">{patientContact}</p>
+                                </div>
+                                <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${meta.className}`}>
+                                  {meta.label}
                                 </span>
                               </div>
-                              <div className="flex items-center justify-between gap-3">
-                                <span>Start time</span>
-                                <span className="font-medium text-slate-900">{appointment.startTime ?? "--:--"}</span>
+
+                              <div className="mt-4 space-y-2 text-sm text-slate-600">
+                                <div className="flex items-center justify-between gap-3">
+                                  <span>Reason</span>
+                                  <span className="max-w-[55%] truncate font-medium text-slate-900">
+                                    {appointment.reason?.trim() ? appointment.reason : "No reason provided"}
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between gap-3">
+                                  <span>Date</span>
+                                  <span className="font-medium text-slate-900">{formatAppointmentDate(appointment.appointmentDate)}</span>
+                                </div>
+                                <div className="flex items-center justify-between gap-3">
+                                  <span>Time</span>
+                                  <span className="font-medium text-slate-900">{appointment.startTime ?? "--:--"}</span>
+                                </div>
                               </div>
-                            </div>
 
-                            {isActionable ? (
-                              <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                                {isPending ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleDoctorAppointmentAction(appointmentId, "confirmed")}
-                                  disabled={isUpdatingAppointmentId === appointmentId}
-                                  className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-70"
-                                >
-                                  {isUpdatingAppointmentId === appointmentId ? "Updating..." : "Confirm"}
-                                </button>
-                                ) : null}
-
-                                {isConfirmed ? (
-                                  <>
+                              {isActionable ? (
+                                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                                  {isPending ? (
                                     <button
                                       type="button"
-                                      onClick={() => handleDoctorAppointmentAction(appointmentId, "completed")}
+                                      onClick={() => handleDoctorAppointmentAction(appointmentId, "confirmed")}
                                       disabled={isUpdatingAppointmentId === appointmentId}
-                                      className="inline-flex items-center justify-center rounded-full bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-70"
+                                      className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-70"
                                     >
-                                      {isUpdatingAppointmentId === appointmentId ? "Updating..." : "Complete"}
+                                      {isUpdatingAppointmentId === appointmentId ? "Updating..." : "Confirm"}
                                     </button>
+                                  ) : null}
+
+                                  {isConfirmed ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDoctorAppointmentAction(appointmentId, "completed")}
+                                        disabled={isUpdatingAppointmentId === appointmentId}
+                                        className="inline-flex items-center justify-center rounded-full bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-70"
+                                      >
+                                        {isUpdatingAppointmentId === appointmentId ? "Updating..." : "Complete"}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDoctorAppointmentAction(appointmentId, "cancelled")}
+                                        disabled={isUpdatingAppointmentId === appointmentId}
+                                        className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-70"
+                                      >
+                                        {isUpdatingAppointmentId === appointmentId ? "Updating..." : "Cancel"}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDoctorAppointmentAction(appointmentId, "no_show")}
+                                        disabled={isUpdatingAppointmentId === appointmentId}
+                                        className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-70 sm:col-span-2"
+                                      >
+                                        {isUpdatingAppointmentId === appointmentId ? "Updating..." : "Mark no-show"}
+                                      </button>
+                                    </>
+                                  ) : null}
+
+                                  {isPending ? (
                                     <button
                                       type="button"
-                                      onClick={() => handleDoctorAppointmentAction(appointmentId, "no_show")}
+                                      onClick={() => handleDoctorAppointmentAction(appointmentId, "cancelled")}
                                       disabled={isUpdatingAppointmentId === appointmentId}
-                                      className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-70"
+                                      className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-70"
                                     >
-                                      {isUpdatingAppointmentId === appointmentId ? "Updating..." : "Mark no-show"}
+                                      {isUpdatingAppointmentId === appointmentId ? "Updating..." : "Cancel"}
                                     </button>
-                                  </>
-                                ) : null}
-
-                                <button
-                                  type="button"
-                                  onClick={() => handleDoctorAppointmentAction(appointmentId, "cancelled")}
-                                  disabled={isUpdatingAppointmentId === appointmentId}
-                                  className={`inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-70 ${isPending ? "" : "sm:col-span-2"}`}
-                                >
-                                  {isUpdatingAppointmentId === appointmentId ? "Updating..." : "Cancel"}
-                                </button>
-                              </div>
-                            ) : null}
-                          </article>
-                        );
-                      })}
-                    </div>
-                  )}
+                                  ) : null}
+                                </div>
+                              ) : null}
+                            </article>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
@@ -5551,3 +6129,7 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
       </DashboardShell>
     );
 }
+
+
+
+
