@@ -10,6 +10,7 @@ import { DashboardShell } from "./dashboard-shell";
 import { getCurrentUser, logoutUser, type AuthRole, type AuthUser } from "@/lib/auth";
 import { API_BASE_URL } from "@/lib/api";
 import { requestJson } from "@/lib/api-client";
+import { emitToast } from "@/lib/toast";
 
 type DashboardNavItem = {
   label: string;
@@ -2158,7 +2159,13 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
       const avatarUrl = await uploadDoctorAvatar(file);
       setPatientProfileForm((current) => ({ ...current, avatar: avatarUrl }));
     } catch (uploadError) {
-      setPatientProfileError(uploadError instanceof Error ? uploadError.message : "Failed to load image");
+      const message = uploadError instanceof Error ? uploadError.message : "Failed to upload the photo";
+      setPatientProfileError(message);
+      emitToast({
+        variant: "error",
+        title: "Action failed",
+        message,
+      });
     } finally {
       event.target.value = "";
     }
@@ -2186,6 +2193,8 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
           dateOfBirth: patientProfileForm.dateOfBirth.trim(),
           address: patientProfileForm.address.trim(),
         }),
+      }, {
+        successMessage: "Profile updated successfully.",
       });
 
       setContent((current) => (current ? { ...current, patientProfile: response.data ?? current.patientProfile } : current));
@@ -2252,7 +2261,13 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
       const avatarUrl = await uploadDoctorAvatar(file);
       setDoctorProfileForm((current) => ({ ...current, avatar: avatarUrl }));
     } catch (uploadError) {
-      setDoctorProfileError(uploadError instanceof Error ? uploadError.message : "Failed to load image");
+      const message = uploadError instanceof Error ? uploadError.message : "Failed to upload the photo";
+      setDoctorProfileError(message);
+      emitToast({
+        variant: "error",
+        title: "Action failed",
+        message,
+      });
     } finally {
       event.target.value = "";
     }
@@ -2284,6 +2299,8 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
           consultationFee: Number(doctorProfileForm.consultationFee || 0),
           bio: doctorProfileForm.bio.trim(),
         }),
+      }, {
+        successMessage: "Your profile update has been submitted for review.",
       });
 
       setContent((current) =>
@@ -2321,7 +2338,13 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
       const avatarUrl = await uploadDoctorAvatar(file);
       setDoctorCreationForm((current) => ({ ...current, avatar: avatarUrl }));
     } catch (uploadError) {
-      setDoctorCreationError(uploadError instanceof Error ? uploadError.message : "Failed to load image");
+      const message = uploadError instanceof Error ? uploadError.message : "Failed to upload the photo";
+      setDoctorCreationError(message);
+      emitToast({
+        variant: "error",
+        title: "Action failed",
+        message,
+      });
     } finally {
       event.target.value = "";
     }
@@ -2360,12 +2383,16 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
         await requestJson(`/api/doctors/${editingDoctorId}`, {
           method: "PATCH",
           body: JSON.stringify(payload),
+        }, {
+          successMessage: "Doctor account updated successfully.",
         });
         setDoctorCreationMessage("Doctor account updated successfully.");
       } else {
         await requestJson("/api/doctors", {
           method: "POST",
           body: JSON.stringify(payload),
+        }, {
+          successMessage: "Doctor account created successfully.",
         });
         setDoctorCreationMessage("Doctor account created successfully.");
         if (user.role === "super_admin") {
@@ -2402,7 +2429,14 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
             ? `/api/doctors/${doctorId}/reject`
             : `/api/doctors/${doctorId}/unpublish`;
 
-      await requestJson(endpoint, { method: "PATCH" });
+      await requestJson(endpoint, { method: "PATCH" }, {
+        successMessage:
+          action === "approve"
+            ? "Doctor approved successfully."
+            : action === "reject"
+              ? "Doctor rejected successfully."
+              : "Doctor unpublished successfully.",
+      });
       setDoctorsMessage(
         action === "approve"
           ? "Doctor approved successfully."
@@ -2629,7 +2663,11 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
     setIsMarkingAllNotifications(true);
 
     try {
-      await Promise.all(readNotifications.map((notification) => requestJson(`/api/notifications/${notification._id}`, { method: "DELETE" })));
+      await Promise.all(
+        readNotifications.map((notification) =>
+          requestJson(`/api/notifications/${notification._id}`, { method: "DELETE" }, { toast: false }),
+        ),
+      );
       setContent((currentContent) =>
         currentContent
           ? {
@@ -2640,11 +2678,21 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
           : currentContent,
       );
       setNotificationsMessage("Read notifications deleted.");
+      emitToast({
+        variant: "success",
+        title: "Success",
+        message: "Read notifications cleared.",
+      });
       await refreshDashboardContent(user);
     } catch (notificationError) {
       setNotificationsError(
         notificationError instanceof Error ? notificationError.message : "Failed to delete notifications",
       );
+      emitToast({
+        variant: "error",
+        title: "Action failed",
+        message: notificationError instanceof Error ? notificationError.message : "Failed to delete notifications",
+      });
     } finally {
       setIsMarkingAllNotifications(false);
     }
@@ -2701,14 +2749,18 @@ export function DashboardRoutePage({ config }: DashboardRoutePageProps) {
         await requestJson(`/api/appointments/${appointmentId}/cancel`, {
           method: "PATCH",
           body: JSON.stringify({ cancellationReason: "Cancelled from doctor dashboard" }),
+        }, {
+          successMessage: "Appointment cancelled successfully.",
         });
         setAppointmentsMessage("Appointment cancelled successfully.");
       } else if (action) {
         await requestJson(`/api/appointments/${appointmentId}/status`, {
           method: "PATCH",
           body: JSON.stringify({ status: action }),
+        }, {
+          successMessage: `Appointment marked as ${action.replace(/_/g, "-")}.`,
         });
-        setAppointmentsMessage(`Appointment marked as ${action.replace("_", " ")}.`);
+        setAppointmentsMessage(`Appointment marked as ${action.replace(/_/g, " ")}.`);
       }
 
       await refreshDashboardContent(user);

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { BellRing, CheckCheck, Clock3, Loader2, MoreHorizontal, Trash2, X } from "lucide-react";
 
 import { requestJson } from "@/lib/api-client";
+import { emitToast } from "@/lib/toast";
 import { disconnectNotificationSocket, getNotificationSocket } from "@/lib/socket";
 
 type DashboardUser = {
@@ -22,12 +23,6 @@ type NotificationRecord = {
   link?: string;
   isRead?: boolean;
   createdAt?: string;
-};
-
-type ToastRecord = {
-  id: string;
-  title: string;
-  message: string;
 };
 
 type NotificationResponse = {
@@ -157,9 +152,7 @@ export function NotificationBell({ user }: { user: DashboardUser | null | undefi
   const [error, setError] = useState("");
   const [isMarkingAll, setIsMarkingAll] = useState(false);
   const [busyNotificationId, setBusyNotificationId] = useState<string | null>(null);
-  const [toasts, setToasts] = useState<ToastRecord[]>([]);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const toastTimersRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
     if (!user?.id) {
@@ -216,7 +209,11 @@ export function NotificationBell({ user }: { user: DashboardUser | null | undefi
     const handleNewNotification = (notification: NotificationRecord) => {
       setNotifications((current) => sortNotifications([notification, ...current.filter((item) => item._id !== notification._id)]));
       setUnreadCount((current) => current + (notification.isRead ? 0 : 1));
-      pushToast(notification.title, notification.message);
+      emitToast({
+        variant: "info",
+        title: notification.title,
+        message: notification.message,
+      });
       void playNotificationTone();
     };
 
@@ -268,25 +265,6 @@ export function NotificationBell({ user }: { user: DashboardUser | null | undefi
     document.addEventListener("mousedown", handleDocumentClick);
     return () => document.removeEventListener("mousedown", handleDocumentClick);
   }, []);
-
-  useEffect(() => {
-    return () => {
-      toastTimersRef.current.forEach((timer) => window.clearTimeout(timer));
-      toastTimersRef.current.clear();
-    };
-  }, []);
-
-  function pushToast(title: string, message: string) {
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    setToasts((current) => [{ id, title, message }, ...current].slice(0, 3));
-
-    const timer = window.setTimeout(() => {
-      setToasts((current) => current.filter((toast) => toast.id !== id));
-      toastTimersRef.current.delete(id);
-    }, 4000);
-
-    toastTimersRef.current.set(id, timer);
-  }
 
   function resolveNotificationHref(notification: NotificationRecord) {
     if (notification.link?.trim()) {
@@ -372,10 +350,24 @@ export function NotificationBell({ user }: { user: DashboardUser | null | undefi
     setError("");
 
     try {
-      await Promise.all(readNotifications.map((notification) => requestJson(`/api/notifications/${notification._id}`, { method: "DELETE" })));
+      await Promise.all(
+        readNotifications.map((notification) =>
+          requestJson(`/api/notifications/${notification._id}`, { method: "DELETE" }, { toast: false }),
+        ),
+      );
       setNotifications((current) => current.filter((notification) => !notification.isRead));
+      emitToast({
+        variant: "success",
+        title: "Success",
+        message: "Read notifications cleared.",
+      });
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : "Failed to delete notifications");
+      emitToast({
+        variant: "error",
+        title: "Action failed",
+        message: deleteError instanceof Error ? deleteError.message : "Failed to delete notifications",
+      });
     } finally {
       setIsMarkingAll(false);
     }
@@ -579,18 +571,6 @@ export function NotificationBell({ user }: { user: DashboardUser | null | undefi
             </div>
           </div>
         ) : null}
-      </div>
-
-      <div className="pointer-events-none fixed right-4 top-4 z-[80] flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-3">
-        {toasts.map((toast) => (
-          <div
-            key={toast.id}
-            className="pointer-events-auto rounded-3xl border border-slate-200 bg-white px-4 py-3 shadow-[0_16px_40px_rgba(15,23,42,0.18)]"
-          >
-            <p className="text-sm font-semibold text-slate-950">{toast.title}</p>
-            <p className="mt-1 text-sm leading-6 text-slate-600">{toast.message}</p>
-          </div>
-        ))}
       </div>
     </>
   );

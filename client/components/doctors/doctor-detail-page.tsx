@@ -127,9 +127,11 @@ export function DoctorDetailPage({ doctorId }: DoctorDetailPageProps) {
           startTime: form.startTime,
           reason: form.reason.trim(),
         }),
+      }, {
+        successMessage: "Appointment booked successfully.",
       });
 
-      setSuccessMessage(response.message ?? "Appointment request submitted successfully.");
+      setSuccessMessage(response.message ?? "Appointment booked successfully.");
       setForm({
         appointmentDate: "",
         startTime: "",

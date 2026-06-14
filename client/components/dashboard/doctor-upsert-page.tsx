@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { DashboardShell } from "./dashboard-shell";
 import { getCurrentUser, logoutUser, type AuthRole, type AuthUser } from "@/lib/auth";
 import { requestJson } from "@/lib/api-client";
+import { emitToast } from "@/lib/toast";
 
 type DashboardNavItem = {
   label: string;
@@ -340,7 +341,13 @@ export function DoctorUpsertPage({
       const avatarUrl = await uploadDoctorAvatar(file);
       setForm((current) => ({ ...current, avatar: avatarUrl }));
     } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "Failed to load image");
+      const message = uploadError instanceof Error ? uploadError.message : "Failed to upload the photo";
+      setError(message);
+      emitToast({
+        variant: "error",
+        title: "Action failed",
+        message,
+      });
     } finally {
       event.target.value = "";
     }
@@ -450,10 +457,14 @@ export function DoctorUpsertPage({
         ? await requestJson<DoctorRecord>(`/api/doctors/${doctorId}`, {
             method: "PATCH",
             body: JSON.stringify(payload),
+          }, {
+            successMessage: "Doctor updated successfully.",
           })
         : await requestJson<DoctorRecord>("/api/doctors", {
             method: "POST",
             body: JSON.stringify(payload),
+          }, {
+            successMessage: "Doctor account created successfully.",
           });
 
       setSuccessMessage(response.message ?? (mode === "edit" ? "Doctor updated successfully" : "Doctor created successfully"));
